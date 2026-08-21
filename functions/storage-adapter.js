@@ -1,13 +1,14 @@
 /**
  * 数据存储抽象层
- * 支持 KV 和 D1 两种存储方式
+ * 支持 KV、D1 和 SQLite 三种存储方式
  * 根据设置自动选择存储类型
  */
 
 // 存储类型常量
 export const STORAGE_TYPES = {
     KV: 'kv',
-    D1: 'd1'
+    D1: 'd1',
+    SQLITE: 'sqlite'
 };
 
 // 数据键映射
@@ -20,6 +21,17 @@ const DATA_KEYS = {
 
 const D1_COLLECTION_CACHE_TTL_MS = 30 * 1000;
 const d1CollectionCaches = new WeakMap();
+
+const SQLITE_STORAGE_DEFAULT_PATH = '/data/misub.sqlite';
+
+function resolveSqliteStoragePath(env = {}) {
+    return String(env.MISUB_SQLITE_PATH || SQLITE_STORAGE_DEFAULT_PATH).trim() || SQLITE_STORAGE_DEFAULT_PATH;
+}
+
+function shouldUseSqliteStorage(env = {}) {
+    return env.MISUB_RUNTIME === 'container'
+        || (env.MISUB_RUNTIME !== 'cloudflare' && env.MISUB_STORAGE_TYPE === STORAGE_TYPES.SQLITE);
+}
 
 function getD1CollectionCache(database) {
     let cache = d1CollectionCaches.get(database);
@@ -560,6 +572,156 @@ class D1StorageAdapter {
     }
 }
 
+class SQLiteStorageAdapter {
+    constructor(filePath) {
+        this.filePath = filePath;
+        this.type = STORAGE_TYPES.SQLITE;
+        this.database = null;
+    }
+
+    async getDatabase() {
+        if (this.database) return this.database;
+        const { mkdir } = await import('node:fs/promises');
+        const { dirname } = await import('node:path');
+        const { DatabaseSync } = await import('node:sqlite');
+        await mkdir(dirname(this.filePath), { recursive: true });
+        this.database = new DatabaseSync(this.filePath);
+        this.database.exec(D1_SCHEMA_STATEMENTS.join('\n'));
+        return this.database;
+    }
+
+    async get(key, type = 'json') {
+        const database = await this.getDatabase();
+        const { table, queryField, queryValue } = this.parseKey(key);
+        if ((table === 'subscriptions' || table === 'profiles') && queryValue === 'main') {
+            const rows = database.prepare(`SELECT data FROM ${table} ORDER BY rowid`).all();
+            const values = rows.map(row => JSON.parse(row.data));
+            return type === 'json' ? values : JSON.stringify(values);
+        }
+        const row = database.prepare(`SELECT ${table === 'settings' ? 'value' : 'data'} AS data FROM ${table} WHERE ${queryField} = ?`).get(queryValue);
+        if (!row) return null;
+        if (type !== 'json') return row.data;
+        try {
+            return JSON.parse(row.data);
+        } catch {
+            return row.data;
+        }
+    }
+
+    async put(key, value) {
+        const database = await this.getDatabase();
+        const { table, queryField, queryValue } = this.parseKey(key);
+        const data = typeof value === 'string' ? value : JSON.stringify(value);
+        if ((table === 'subscriptions' || table === 'profiles') && queryValue === 'main' && Array.isArray(value)) {
+            database.exec(`DELETE FROM ${table}`);
+            const statement = database.prepare(`INSERT INTO ${table} (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`);
+            for (const item of value) statement.run(item.id, JSON.stringify(item));
+            return true;
+        }
+        if (table === 'settings') {
+            database.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(queryValue, data);
+        } else {
+            database.prepare(`INSERT OR REPLACE INTO ${table} (${queryField}, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run(queryValue, data);
+        }
+        return true;
+    }
+
+    async delete(key) {
+        const database = await this.getDatabase();
+        const { table, queryField, queryValue } = this.parseKey(key);
+        database.prepare(`DELETE FROM ${table} WHERE ${queryField} = ?`).run(queryValue);
+        return true;
+    }
+
+    async list(prefix = '') {
+        const database = await this.getDatabase();
+        const keys = [];
+        for (const table of ['subscriptions', 'profiles', 'settings']) {
+            const field = table === 'settings' ? 'key' : 'id';
+            const rows = database.prepare(`SELECT ${field} AS value FROM ${table} WHERE ${field} LIKE ?`).all(`${prefix}%`);
+            rows.forEach(row => keys.push({ name: this.buildKey(table, row.value) }));
+        }
+        return keys;
+    }
+
+    async getSubscriptionById(id) { return this.getItem('subscriptions', id); }
+    async getAllSubscriptions() { return this.getItems('subscriptions'); }
+    async getProfileById(id) {
+        const direct = await this.getItem('profiles', id);
+        if (direct) return direct;
+        const profiles = await this.getAllProfiles();
+        return profiles.find(profile => profile.customId === id) || null;
+    }
+    async getAllProfiles() { return this.getItems('profiles'); }
+
+    async updateSubscriptionById(id, updater) {
+        const existing = await this.getSubscriptionById(id);
+        if (!existing) return null;
+        const updated = updater({ ...existing });
+        await this.putSubscription(updated);
+        return updated;
+    }
+
+    async putSubscription(item) {
+        return this.putItem('subscriptions', item);
+    }
+
+    async deleteSubscriptionById(id) {
+        return this.deleteItem('subscriptions', id);
+    }
+
+    async putProfile(item) { return this.putItem('profiles', item); }
+    async deleteProfileById(id) { return this.deleteItem('profiles', id); }
+
+    async getSubscriptionsByIds(ids = []) {
+        const database = await this.getDatabase();
+        if (!ids.length) return [];
+        const placeholders = ids.map(() => '?').join(',');
+        return database.prepare(`SELECT data FROM subscriptions WHERE id IN (${placeholders})`).all(...ids).map(row => JSON.parse(row.data));
+    }
+
+    async putAllSubscriptions(items) { return this.put(DATA_KEYS.SUBSCRIPTIONS, items); }
+    async putAllProfiles(items) { return this.put(DATA_KEYS.PROFILES, items); }
+
+    async getItems(table) {
+        const database = await this.getDatabase();
+        return database.prepare(`SELECT data FROM ${table} ORDER BY rowid`).all().map(row => JSON.parse(row.data));
+    }
+
+    async getItem(table, id, fields = ['id']) {
+        const database = await this.getDatabase();
+        const clauses = fields.map(field => `${field} = ?`).join(' OR ');
+        const row = database.prepare(`SELECT data FROM ${table} WHERE ${clauses} LIMIT 1`).get(...fields.map(() => id));
+        return row ? JSON.parse(row.data) : null;
+    }
+
+    async putItem(table, item) {
+        const database = await this.getDatabase();
+        database.prepare(`INSERT OR REPLACE INTO ${table} (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run(item.id, JSON.stringify(item));
+        return item;
+    }
+
+    async deleteItem(table, id) {
+        const database = await this.getDatabase();
+        const result = database.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+        return result.changes > 0;
+    }
+
+    parseKey(key) {
+        if (key === DATA_KEYS.SUBSCRIPTIONS) return { table: 'subscriptions', queryField: 'id', queryValue: 'main' };
+        if (key === DATA_KEYS.PROFILES) return { table: 'profiles', queryField: 'id', queryValue: 'main' };
+        if (key === DATA_KEYS.SETTINGS) return { table: 'settings', queryField: 'key', queryValue: 'main' };
+        return { table: 'settings', queryField: 'key', queryValue: key };
+    }
+
+    buildKey(table, value) {
+        if (table === 'subscriptions' && value === 'main') return DATA_KEYS.SUBSCRIPTIONS;
+        if (table === 'profiles' && value === 'main') return DATA_KEYS.PROFILES;
+        if (table === 'settings' && value === 'main') return DATA_KEYS.SETTINGS;
+        return value;
+    }
+}
+
 /**
  * 无存储降级适配器（无可用持久化存储时，不读写持久数据）
  */
@@ -625,6 +787,9 @@ export class SettingsCache {
 
         try {
             let settings = null;
+            if (shouldUseSqliteStorage(env)) {
+                settings = await new SQLiteStorageAdapter(resolveSqliteStoragePath(env)).get(DATA_KEYS.SETTINGS);
+            }
             if (env.MISUB_DB) {
                 try {
                     const d1Adapter = new D1StorageAdapter(env.MISUB_DB);
@@ -683,6 +848,9 @@ export class StorageFactory {
      * @returns {KVStorageAdapter|D1StorageAdapter}
      */
     static createAdapter(env, storageType = STORAGE_TYPES.KV) {
+        if (shouldUseSqliteStorage(env)) {
+            return new SQLiteStorageAdapter(resolveSqliteStoragePath(env));
+        }
         switch (storageType) {
             case STORAGE_TYPES.D1:
                 if (!env.MISUB_DB) {
@@ -715,6 +883,9 @@ export class StorageFactory {
      * @returns {Promise<string>} 存储类型
      */
     static async getStorageType(env) {
+        if (shouldUseSqliteStorage(env)) {
+            return STORAGE_TYPES.SQLITE;
+        }
         try {
             const settings = await SettingsCache.get(env);
             if (settings?.storageType) {

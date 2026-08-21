@@ -154,6 +154,10 @@ const fetchClients = async () => {
 };
 
 const fetchClientVersions = async () => {
+    const rawFlag = String(import.meta.env.VITE_ENABLE_UPDATE_CHECK || '').trim().toLowerCase();
+    const enabled = ['1', 'true', 'yes', 'on'].includes(rawFlag);
+    if (!enabled) return;
+
     clients.value.forEach(async (client) => {
         if (!client.repo) return;
         try {

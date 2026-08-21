@@ -1,8 +1,30 @@
 import { StorageFactory } from '../../storage-adapter.js';
 import { createJsonResponse, createErrorResponse, JSON_BODY_LIMITS, readJsonWithLimit } from '../utils.js';
-import { KV_KEY_PROFILES } from '../config.js';
+import { KV_KEY_PROFILES, KV_KEY_SETTINGS, DEFAULT_SETTINGS } from '../config.js';
 import { handleProfileMode } from './profile-handler.js';
 import { handleSingleSubscriptionMode, handleDirectUrlMode } from './single-subscription.js';
+
+function parseBooleanEnvFlag(value) {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized) return null;
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return null;
+}
+
+async function resolveDefaultSkipCertVerify(env) {
+    const envOverride = parseBooleanEnvFlag(env?.MISUB_SKIP_TLS_VERIFY);
+    if (envOverride !== null) return envOverride;
+
+    try {
+        const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
+        const settings = await storageAdapter.get(KV_KEY_SETTINGS) || DEFAULT_SETTINGS;
+        return Boolean(settings?.builtinSkipCertVerify);
+    } catch {
+        return false;
+    }
+}
 
 /**
  * 确定请求模式
@@ -50,7 +72,7 @@ export async function handlePublicPreviewRequest(request, env) {
         }
 
         // 调用 handleProfileMode 获取节点（公开页默认显示处理后的结果）
-        const shouldSkipCertificateVerify = Boolean(
+        const profileWantsSkipVerify = Boolean(
             profile?.builtinSkipCertVerify ||
             profile?.transformBackendScv ||
             profile?.skipCertVerify ||
@@ -58,6 +80,8 @@ export async function handlePublicPreviewRequest(request, env) {
             profile?.settings?.builtinSkipCertVerify ||
             profile?.settings?.transformBackendScv
         );
+        const envDefaultSkipVerify = await resolveDefaultSkipCertVerify(env);
+        const shouldSkipCertificateVerify = profileWantsSkipVerify || envDefaultSkipVerify;
         const result = await handleProfileMode(request, env, profile.id, userAgent, true, shouldSkipCertificateVerify);
 
         return createJsonResponse(result);
@@ -86,9 +110,13 @@ export async function handleSubscriptionNodesRequest(request, env) {
             profileId,
             userAgent = 'MiSub-Node-Preview/1.0',
             applyTransform = false,  // 管理后台默认不应用转换，由前端控制
-            skipCertVerify = false,
+            skipCertVerify,
             plusAsSpace = false
         } = requestData;
+
+        const effectiveSkipCertVerify = skipCertVerify === undefined
+            ? await resolveDefaultSkipCertVerify(env)
+            : Boolean(skipCertVerify);
 
         // 验证必需参数
         if (!subscriptionUrl && !subscriptionId && !profileId) {
@@ -105,13 +133,13 @@ export async function handleSubscriptionNodesRequest(request, env) {
             case 'profile':
                 // [Modified] Default applyTransform to true for profile preview if not specified
                 // This ensures preview matches the final output ("What You See Is What You Get")
-                result = await handleProfileMode(request, env, profileId, userAgent, requestData.applyTransform !== undefined ? requestData.applyTransform : true, skipCertVerify);
+                result = await handleProfileMode(request, env, profileId, userAgent, requestData.applyTransform !== undefined ? requestData.applyTransform : true, effectiveSkipCertVerify);
                 break;
             case 'subscription':
-                result = await handleSingleSubscriptionMode(request, env, subscriptionId, userAgent, skipCertVerify);
+                result = await handleSingleSubscriptionMode(request, env, subscriptionId, userAgent, effectiveSkipCertVerify);
                 break;
             case 'direct':
-                result = await handleDirectUrlMode(subscriptionUrl, userAgent, skipCertVerify, plusAsSpace);
+                result = await handleDirectUrlMode(subscriptionUrl, userAgent, effectiveSkipCertVerify, plusAsSpace);
                 break;
             default:
                 return createJsonResponse({

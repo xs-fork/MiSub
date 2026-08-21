@@ -124,13 +124,24 @@ export async function conditionalKVPut(env, key, newData, oldData = null) {
 
 /**
  * 获取或生成 Cookie 加密密钥
- * 优先顺序：KV → 环境变量 COOKIE_SECRET → 随机生成（无 KV 时仅内存有效）
+ * 优先顺序：KV → 容器文件存储 → 环境变量 COOKIE_SECRET → 随机生成
  * @param {Object} env - 运行时环境对象
  * @returns {Promise<string>} 密钥
  */
 export async function getCookieSecret(env) {
     const kv = getKV(env);
     const runtimeCookieSecret = getRuntimeEnvValue(env, 'COOKIE_SECRET');
+
+    if (env?.MISUB_RUNTIME === 'container') {
+        const { StorageFactory } = await import('../storage-adapter.js');
+        const sqliteStorage = StorageFactory.createAdapter(env, 'sqlite');
+        const storedSecret = await sqliteStorage.get('SYSTEM_COOKIE_SECRET');
+        if (storedSecret) return String(storedSecret);
+
+        const generatedSecret = runtimeCookieSecret || crypto.randomUUID();
+        await sqliteStorage.put('SYSTEM_COOKIE_SECRET', generatedSecret);
+        return generatedSecret;
+    }
 
     if (kv) {
         // 1. 尝试从 KV 读取

@@ -21,7 +21,6 @@ function ensureArray(data) {
     }
     return [];
 }
-
 function adaptLegacyTransform(config) {
     if (!config || !config.enabled) return [];
 
@@ -160,7 +159,21 @@ export async function handleProfileMode(request, env, profileId, userAgent, appl
 
     // 并行获取HTTP订阅节点
     const subscriptionResults = await Promise.all(
-        targetSubscriptions.map(sub => fetchSubscriptionNodes(sub.url, sub.name, userAgent, sub.customUserAgent, false, sub.exclude, sub.fetchProxy, skipCertVerify, Boolean(sub?.plusAsSpace), sub?.enableNodeCache === true))
+        targetSubscriptions.map(sub => {
+            const effectiveFetchProxy = typeof sub?.fetchProxy === 'string' ? sub.fetchProxy.trim() : '';
+            return fetchSubscriptionNodes(
+                sub.url,
+                sub.name,
+                userAgent,
+                sub.customUserAgent,
+                false,
+                sub.exclude,
+                effectiveFetchProxy,
+                skipCertVerify,
+                Boolean(sub?.plusAsSpace),
+                sub?.enableNodeCache === true
+            );
+        })
     );
 
     // 合并所有结果

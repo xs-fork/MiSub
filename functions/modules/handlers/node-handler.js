@@ -25,6 +25,27 @@ const SUBSCRIPTION_BODY_ERROR_PATTERNS = [
     /\bhttp\s*(400|401|403|404|429|5\d\d)\b/i
 ];
 
+function parseBooleanEnvFlag(value) {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized) return null;
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return null;
+}
+
+function resolveEnvSkipTlsVerify(env) {
+    return parseBooleanEnvFlag(env?.MISUB_SKIP_TLS_VERIFY);
+}
+
+function safeHost(value) {
+    try {
+        return new URL(String(value || '')).host || 'unknown-host';
+    } catch {
+        return 'invalid-url';
+    }
+}
+
 function summarizeResponseText(text) {
     return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 180);
 }
@@ -46,6 +67,14 @@ function detectSubscriptionBodyError(text) {
 }
 
 async function resolveNodeCountFetchCfOptions(env) {
+    const envOverride = resolveEnvSkipTlsVerify(env);
+    if (envOverride === true) {
+        return { cf: { insecureSkipVerify: true } };
+    }
+    if (envOverride === false) {
+        return {};
+    }
+
     try {
         const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
         const settings = await storageAdapter.get(KV_KEY_SETTINGS) || DEFAULT_SETTINGS;
@@ -83,9 +112,13 @@ export async function handleNodeCountRequest(request, env) {
         let requestUrl = subUrl;
         const requestedUserAgent = typeof customUserAgent === 'string' ? customUserAgent.trim() : '';
         const processedUserAgent = requestedUserAgent || getProcessedUserAgent('v2rayN/7.23', subUrl);
-        if (fetchProxy && typeof fetchProxy === 'string' && fetchProxy.trim()) {
-            requestUrl = buildFetchProxyUrl(fetchProxy, subUrl, processedUserAgent);
+        const effectiveFetchProxy = typeof fetchProxy === 'string' ? fetchProxy.trim() : '';
+        if (effectiveFetchProxy) {
+            requestUrl = buildFetchProxyUrl(effectiveFetchProxy, subUrl, processedUserAgent);
         }
+        console.info(
+            `[NodeHandler] node_count request target proxyUsed=${Boolean(effectiveFetchProxy)} requestUrl=${requestUrl}`
+        );
 
         try {
             // 使用统一的User-Agent策略
@@ -345,7 +378,9 @@ export async function handleNodeCountRequest(request, env) {
                     }
                 }
 
-                console.error(`[Node Count] Node count update failed for ${subUrl}: ${errorMessage}`);
+                console.error(
+                    `[Node Count] Node count update failed proxyUsed=${Boolean(effectiveFetchProxy)} requestUrl=${requestUrl}: ${errorMessage}`
+                );
                 return createJsonResponse({
                     success: false,
                     error: errorMessage,

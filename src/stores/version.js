@@ -3,6 +3,11 @@ import { ref, computed } from 'vue';
 import { fetchGithubLatestRelease } from '../lib/api.js';
 import packageJson from '../../package.json';
 
+function isUpdateCheckEnabled() {
+    const raw = String(import.meta.env.VITE_ENABLE_UPDATE_CHECK || '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 export const useVersionStore = defineStore('version', () => {
     // --- State ---
     const currentVersion = ref(packageJson.version);
@@ -10,6 +15,7 @@ export const useVersionStore = defineStore('version', () => {
     const showModal = ref(false);
     const showUpdateNotice = ref(false);
     const upstreamRepo = 'imzyb/MiSub';
+    const updateCheckEnabled = isUpdateCheckEnabled();
 
     // 本地更新日志 (v2.7.0)
     const localChangelog = `✨ **订阅生成链路、内置模板与安全兼容性增强**
@@ -54,6 +60,7 @@ export const useVersionStore = defineStore('version', () => {
 
     // --- Actions ---
     async function checkVersion(suppressModal = false) {
+        if (!updateCheckEnabled) return;
         try {
             const release = await fetchGithubLatestRelease(upstreamRepo);
             if (release?.tag_name) {
@@ -99,6 +106,7 @@ export const useVersionStore = defineStore('version', () => {
         hasUpdate,
         isUpToDate,
         checkVersion,
+        updateCheckEnabled,
         openModal,
         closeModal,
         suppressUpdateModal

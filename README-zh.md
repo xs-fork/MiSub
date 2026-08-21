@@ -188,6 +188,43 @@
 
 ## 📚 部署指南
 
+### Docker Compose 部署
+
+MiSub 支持通过 Docker Compose 自托管部署。
+
+说明：容器模式使用 Node.js 22 和 SQLite；Cloudflare Functions 模式仍使用 Wrangler、KV 与 D1。
+
+1. 准备环境变量文件：
+
+```bash
+cp .env.example .env
+```
+
+2. 编辑 `.env`，至少设置：
+
+- `ADMIN_PASSWORD`：后台登录密码。
+- `VITE_DEFAULT_LOCALE`：前端默认语言（`zh-CN` 或 `en-US`），例如设为 `zh-CN` 可默认中文。
+- `VITE_FORCE_LOCALE`：强制前端语言（`zh-CN` 或 `en-US`），设置后将覆盖浏览器语言和本地缓存。
+- `VITE_ENABLE_UPDATE_CHECK`：是否启用更新检查（`true`/`false`），默认 `false`。关闭后不会请求 GitHub Release 接口。
+- `VITE_DEFAULT_FETCH_PROXY`：专属拉取代理默认前缀。设置后，用户在订阅编辑中打开“专属拉取代理”开关时会自动填入该值（用户仍可手动修改）。
+- `MISUB_SKIP_TLS_VERIFY`：是否跳过订阅拉取 TLS 证书校验（`true`/`false`）。Docker Compose 默认 `true`，可解决部分证书链不完整导致的拉取失败；若网络环境正常，建议改回 `false`。
+
+3. 启动服务：
+
+```bash
+docker compose up -d --build
+```
+
+4. 访问地址：
+
+- `http://<你的主机>:8787/login`
+
+数据持久化说明：
+
+- Compose 会把宿主机 `./data` 挂载到容器内 `/data`。
+- 容器模式的 SQLite 数据库默认保存为 `./data/misub.sqlite`。
+- 迁移或备份时请保留该文件。
+
 ### 1. 绑定 KV 命名空间 (必需)
 
 部署完成后,进入项目设置:

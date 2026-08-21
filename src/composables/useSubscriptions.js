@@ -331,12 +331,13 @@ export function useSubscriptions(markDirty) {
   // ========== 定时自动更新功能 ==========
   const DEFAULT_INTERVAL_MS = TIMING.AUTO_UPDATE_INTERVAL_MS;
   let autoUpdateTimerId = null;
+  let subscriptionUpdateTimerId = null;
   let currentIntervalMs = DEFAULT_INTERVAL_MS;
 
   async function autoUpdateAllSubscriptions() {
     try {
       const subsToUpdate = subscriptions.value.filter(sub =>
-        sub.enabled && sub.url && sub.url.startsWith('http') && !sub.isUpdating
+        sub.enabled && sub.url && sub.url.startsWith('http') && !sub.isUpdating && !(Number(sub.autoUpdateInterval) > 0)
       );
       for (const sub of subsToUpdate) {
         await handleUpdateNodeCount(sub.id, true);
@@ -344,6 +345,21 @@ export function useSubscriptions(markDirty) {
     } catch (e) {
       console.error('Auto update failed', e);
     }
+  }
+
+  function startSubscriptionAutoUpdate() {
+    if (subscriptionUpdateTimerId) return;
+    subscriptionUpdateTimerId = setInterval(() => {
+      const now = Date.now();
+      for (const sub of subscriptions.value) {
+        const interval = Number(sub.autoUpdateInterval);
+        if (!sub.enabled || !sub.url?.startsWith('http') || sub.isUpdating || !(interval > 0)) continue;
+        const lastUpdatedAt = Number(sub.lastAutoUpdatedAt) || 0;
+        if (lastUpdatedAt && now - lastUpdatedAt < interval * 60 * 1000) continue;
+        sub.lastAutoUpdatedAt = now;
+        void handleUpdateNodeCount(sub.id, true);
+      }
+    }, 60 * 1000);
   }
 
   function startAutoUpdate(intervalMinutes = null) {
@@ -359,9 +375,14 @@ export function useSubscriptions(markDirty) {
         : DEFAULT_INTERVAL_MS;
     }
 
-    // 如果间隔为0，表示禁用自动更新
+    startSubscriptionAutoUpdate();
+
+    // 如果全局间隔为0，只禁用全局自动更新，不影响订阅自己的间隔
     if (intervalMs === 0) {
-      stopAutoUpdate();
+      if (autoUpdateTimerId) {
+        clearInterval(autoUpdateTimerId);
+        autoUpdateTimerId = null;
+      }
       if (isDev) console.debug('[AutoUpdate] Disabled by user setting');
       return;
     }
@@ -380,6 +401,7 @@ export function useSubscriptions(markDirty) {
       void autoUpdateAllSubscriptions();
     }, intervalMs);
 
+
     if (isDev) console.debug(`[AutoUpdate] Started with interval: ${intervalMs / 60000} minutes`);
   }
 
@@ -388,6 +410,10 @@ export function useSubscriptions(markDirty) {
       clearInterval(autoUpdateTimerId);
       autoUpdateTimerId = null;
       if (isDev) console.debug('[AutoUpdate] Stopped');
+    }
+    if (subscriptionUpdateTimerId) {
+      clearInterval(subscriptionUpdateTimerId);
+      subscriptionUpdateTimerId = null;
     }
   }
 

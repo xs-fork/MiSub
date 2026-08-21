@@ -1,0 +1,31 @@
+services:
+  misub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: misub
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: 8787
+      NODE_OPTIONS: ${NODE_OPTIONS:---disable-warning=ExperimentalWarning}
+      MISUB_RUNTIME: ${MISUB_RUNTIME:-container}
+      MISUB_STORAGE_TYPE: ${MISUB_STORAGE_TYPE:-sqlite}
+      MISUB_SQLITE_PATH: ${MISUB_SQLITE_PATH:-/data/misub.sqlite}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_me_now}
+      COOKIE_SECRET: ${COOKIE_SECRET:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      MISUB_PUBLIC_URL: ${MISUB_PUBLIC_URL:-}
+      MISUB_CALLBACK_URL: ${MISUB_CALLBACK_URL:-}
+      MISUB_SKIP_TLS_VERIFY: ${MISUB_SKIP_TLS_VERIFY:-true}
+      D1_NAME: ${D1_NAME:-misub}
+      COMPATIBILITY_DATE: ${COMPATIBILITY_DATE:-2024-04-01}
+      VITE_ENABLE_UPDATE_CHECK: ${VITE_ENABLE_UPDATE_CHECK:-false}
+      VITE_DEFAULT_LOCALE: ${VITE_DEFAULT_LOCALE:-zh-CN}
+      VITE_FORCE_LOCALE: ${VITE_FORCE_LOCALE:-}
+      VITE_DEFAULT_FETCH_PROXY: ${VITE_DEFAULT_FETCH_PROXY:-}
+      PERSIST_DIR: /data/wrangler
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

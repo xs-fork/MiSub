@@ -50,6 +50,14 @@ export function isRealProxyNode(node) {
     return REAL_PROXY_PROTOCOLS.some(protocol => trimmed.startsWith(protocol));
 }
 
+function safeHost(value) {
+    try {
+        return new URL(String(value || '')).host || 'unknown-host';
+    } catch {
+        return 'invalid-url';
+    }
+}
+
 export function parseSubscriptionUserInfoHeader(header) {
     if (typeof header !== 'string' || !header.trim()) return null;
 
@@ -454,9 +462,13 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
                 }
             }
 
-            if (sub.fetchProxy && typeof sub.fetchProxy === 'string' && sub.fetchProxy.trim()) {
-                requestUrl = buildFetchProxyUrl(sub.fetchProxy, sub.url, processedUserAgent);
+            const effectiveFetchProxy = typeof sub?.fetchProxy === 'string' ? sub.fetchProxy.trim() : '';
+            if (effectiveFetchProxy) {
+                requestUrl = buildFetchProxyUrl(effectiveFetchProxy, sub.url, processedUserAgent);
             }
+            console.info(
+                `[SubscriptionFetch] request target subscriptionId=${sub?.id || ''} sourceHost=${safeHost(sub.url)} targetHost=${safeHost(requestUrl)} proxyUsed=${Boolean(effectiveFetchProxy)} proxyHost=${effectiveFetchProxy ? safeHost(effectiveFetchProxy) : ''}`
+            );
             requestUrl = assertPublicNetworkUrl(requestUrl).toString();
 
             const response = await fetchWithRetry(requestUrl, {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { formatBytes } from '../../lib/utils.js';
 import { TIMING } from '../../constants/timing.js';
 import Switch from './Switch.vue';
@@ -14,6 +14,24 @@ const props = defineProps({
 
 const emit = defineEmits(['delete', 'change', 'update', 'edit', 'preview', 'qrcode']);
 const { t } = useI18n();
+const isUrlCopied = ref(false);
+let copyResetTimer;
+
+const copySubscriptionUrl = async () => {
+  const url = String(props.misub.url || '').trim();
+  if (!url) return;
+
+  try {
+    await navigator.clipboard.writeText(url);
+    isUrlCopied.value = true;
+    clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(() => {
+      isUrlCopied.value = false;
+    }, 1800);
+  } catch (error) {
+    console.warn('[Card] Failed to copy subscription URL:', error);
+  }
+};
 
 const getProtocol = (url) => {
   try {
@@ -29,6 +47,7 @@ const getProtocol = (url) => {
 };
 
 const protocol = computed(() => getProtocol(props.misub.url));
+const fetchProxyEnabled = computed(() => Boolean(String(props.misub.fetchProxy || '').trim()));
 
 const protocolStyle = computed(() => {
   const p = protocol.value;
@@ -127,6 +146,14 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
             <span class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider" :class="protocolStyle.style">
               {{ protocolStyle.text }}
             </span>
+            <span
+              class="rounded-full border px-2 py-0.5 text-[10px] font-medium"
+              :class="fetchProxyEnabled
+                ? 'border-primary-500/30 bg-primary-500/10 text-primary-700 dark:text-primary-300'
+                : 'border-gray-300/80 bg-gray-100 text-gray-600 dark:border-white/15 dark:bg-white/5 dark:text-gray-400'"
+            >
+              {{ fetchProxyEnabled ? t('subscriptions.fetchProxyEnabled') : t('subscriptions.fetchProxyDisabled') }}
+            </span>
             <span v-if="expiryInfo" class="rounded-full border border-transparent bg-gray-100 px-2 py-0.5 text-[10px] font-medium dark:bg-white/5" :class="expiryInfo.style">
               {{ expiryInfo.daysRemaining }}
             </span>
@@ -161,10 +188,30 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <svg class="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
           </div>
-        <input type="text" :value="misub.url" readonly class="w-full rounded-lg border border-gray-100 bg-gray-50/80 py-2 pl-9 pr-3 font-mono text-xs text-gray-500 transition-all focus:border-primary-500/30 focus:bg-white focus:outline-none dark:border-white/5 dark:bg-black/20 dark:text-gray-400 dark:focus:bg-black/40" />
+        <input type="text" :value="misub.url" readonly class="w-full rounded-lg border border-gray-100 bg-gray-50/80 py-2 pl-9 pr-11 font-mono text-xs text-gray-500 transition-all focus:border-primary-500/30 focus:bg-white focus:outline-none dark:border-white/5 dark:bg-black/20 dark:text-gray-400 dark:focus:bg-black/40" />
+        <button
+          type="button"
+          @click.stop="copySubscriptionUrl"
+          class="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-gray-400 transition-colors hover:text-primary-500 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500/40"
+          :title="isUrlCopied ? t('notices.copied') : t('actions.copy')"
+          :aria-label="isUrlCopied ? t('notices.copied') : t('actions.copy')"
+        >
+          <svg v-if="!isUrlCopied" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+          <svg v-else class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m5 12 4 4L19 6" />
+          </svg>
+        </button>
       </div>
 
-      <div class="grid gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3 dark:border-white/10 dark:bg-white/5">
+      <button
+        type="button"
+        @click.stop="emit('preview')"
+        class="grid w-full gap-3 rounded-lg border border-gray-100 bg-gray-50/80 p-3 text-left transition-colors hover:border-primary-300/60 hover:bg-primary-50/40 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-white/10 dark:bg-white/5 dark:hover:border-primary-400/40 dark:hover:bg-primary-500/10"
+        :title="t('actions.previewNodes')"
+      >
         <div v-if="trafficInfo" class="space-y-2">
           <div class="flex items-end justify-between text-xs">
             <span class="text-gray-500 dark:text-gray-400">{{ t('subscriptions.usedTraffic') }} <span class="font-semibold text-gray-700 dark:text-gray-200">{{ trafficInfo.used }}</span></span>
@@ -183,7 +230,7 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
             {{ misub.isUpdating ? t('subscriptions.updating') : t('subscriptions.nodeCount', { count: misub.nodeCount || 0 }) }}
           </span>
         </div>
-      </div>
+      </button>
 
       <!-- Footer Actions -->
       <div class="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-white/10">

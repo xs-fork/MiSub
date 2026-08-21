@@ -1,7 +1,25 @@
 import { computed, inject, readonly, ref } from 'vue';
 import { messages } from './messages.js';
 
-export const DEFAULT_LOCALE = 'zh-CN';
+function readDefaultLocaleFromEnv() {
+  const envLocale = typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env.VITE_DEFAULT_LOCALE
+    : '';
+  if (typeof envLocale !== 'string') return 'zh-CN';
+  const normalized = envLocale.trim();
+  return normalized || 'zh-CN';
+}
+
+function readForceLocaleFromEnv() {
+  const envLocale = typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env.VITE_FORCE_LOCALE
+    : '';
+  if (typeof envLocale !== 'string') return '';
+  return envLocale.trim();
+}
+
+export const DEFAULT_LOCALE = readDefaultLocaleFromEnv();
+export const FORCE_LOCALE = readForceLocaleFromEnv();
 export const LOCALE_STORAGE_KEY = 'misub:locale';
 export const SUPPORTED_LOCALES = [
   { code: 'zh-CN', label: '简体中文' },
@@ -43,6 +61,9 @@ export function normalizeLocale(locale) {
 }
 
 export function detectInitialLocale(browserLanguages = []) {
+  const forced = normalizeLocale(FORCE_LOCALE);
+  if (FORCE_LOCALE && supportedCodes.has(forced)) return forced;
+
   const stored = readStoredLocale();
   if (supportedCodes.has(stored)) return stored;
 

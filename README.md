@@ -92,6 +92,43 @@ It is designed for personal and small-team usage: simple operations, clear clien
 
 ## Deployment
 
+### Docker Compose Deployment
+
+MiSub can run with Docker Compose for self-hosted usage.
+
+Note: Container mode uses Node.js 22 and SQLite. Cloudflare Functions mode continues to use Wrangler, KV, and D1.
+
+1. Create env file:
+
+```bash
+cp .env.example .env
+```
+
+2. Edit `.env` and set at least:
+
+- `ADMIN_PASSWORD`: admin login password.
+- `VITE_DEFAULT_LOCALE`: frontend default locale (`zh-CN` or `en-US`). Set `zh-CN` to default to Simplified Chinese.
+- `VITE_FORCE_LOCALE`: force frontend locale (`zh-CN` or `en-US`). When set, it overrides browser language and localStorage.
+- `VITE_ENABLE_UPDATE_CHECK`: enable update checks (`true`/`false`), default `false`. When disabled, frontend will not call the GitHub release endpoint.
+- `VITE_DEFAULT_FETCH_PROXY`: default fetch-proxy prefix. When set, enabling "Fetch proxy" in subscription edit auto-fills this value (users can still override it).
+- `MISUB_SKIP_TLS_VERIFY`: whether to skip TLS certificate verification for subscription fetches (`true`/`false`). Docker Compose defaults to `true` to work around incomplete certificate chains; set back to `false` when your network/certs are normal.
+
+3. Start service:
+
+```bash
+docker compose up -d --build
+```
+
+4. Open:
+
+- `http://<your-host>:8787/login`
+
+Data persistence:
+
+- Compose mounts `./data` from host into container `/data`.
+- Container mode stores its SQLite database at `./data/misub.sqlite` by default.
+- Keep this file for backup/migration.
+
 ### Required KV binding
 
 Create or select a Cloudflare KV namespace, then bind it in Pages settings:

@@ -54,7 +54,8 @@ export async function handleSingleSubscriptionMode(request, env, subscriptionId,
     }
 
     // HTTP订阅：获取节点
-    const result = await fetchSubscriptionNodes(subscription.url, subscription.name, userAgent, subscription.customUserAgent, false, subscription.exclude, subscription.fetchProxy, skipCertVerify, Boolean(subscription?.plusAsSpace), subscription?.enableNodeCache === true);
+    const effectiveFetchProxy = typeof subscription?.fetchProxy === 'string' ? subscription.fetchProxy.trim() : '';
+    const result = await fetchSubscriptionNodes(subscription.url, subscription.name, userAgent, subscription.customUserAgent, false, subscription.exclude, effectiveFetchProxy, skipCertVerify, Boolean(subscription?.plusAsSpace), subscription?.enableNodeCache === true);
 
     return {
         success: true,

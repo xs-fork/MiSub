@@ -12,6 +12,8 @@ import { fetchNodeCount } from '../../../lib/api.js';
 import { useToastStore } from '../../../stores/toast.js';
 import { useI18n } from '../../../i18n/index.js';
 
+const DEFAULT_FETCH_PROXY = String(import.meta.env.VITE_DEFAULT_FETCH_PROXY || '').trim();
+
 const { showToast } = useToastStore();
 const { t } = useI18n();
 
@@ -22,14 +24,22 @@ const isTestingProxy = ref(false);
 // 当弹窗传入新订阅信息时，初始化开关状态
 watch(() => props.editingSubscription, (newSub) => {
   if (newSub) {
+    newSub.autoUpdateInterval = Number(newSub.autoUpdateInterval) || 0;
     useFetchProxy.value = !!newSub.fetchProxy;
   }
 }, { immediate: true });
 
 // 当用户主动关闭开关时，清理绑定的代理地址
 watch(useFetchProxy, (val) => {
-  if (!val && props.editingSubscription) {
+  if (!props.editingSubscription) return;
+
+  if (!val) {
     props.editingSubscription.fetchProxy = '';
+    return;
+  }
+
+  if (!props.editingSubscription.fetchProxy && DEFAULT_FETCH_PROXY) {
+    props.editingSubscription.fetchProxy = DEFAULT_FETCH_PROXY;
   }
 });
 
@@ -79,6 +89,27 @@ const testProxyConnectivity = async () => {
       placeholder="https://..."
       class="font-mono"
     />
+  </div>
+
+  <!-- 订阅自动更新 -->
+  <div class="pt-2 border-t border-gray-100 dark:border-gray-700">
+    <label for="sub-edit-auto-update" class="block text-sm font-medium text-gray-700 dark:text-gray-200">
+      {{ t('subscriptions.autoUpdateIntervalLabel') }}
+    </label>
+    <select
+      id="sub-edit-auto-update"
+      v-model.number="editingSubscription.autoUpdateInterval"
+      class="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-white/10 dark:bg-white/5 dark:text-gray-200"
+    >
+      <option :value="0">{{ t('subscriptions.autoUpdateDisabled') }}</option>
+      <option :value="15">15 {{ t('subscriptions.minutes') }}</option>
+      <option :value="30">30 {{ t('subscriptions.minutes') }}</option>
+      <option :value="60">1 {{ t('subscriptions.hours') }}</option>
+      <option :value="360">6 {{ t('subscriptions.hours') }}</option>
+      <option :value="720">12 {{ t('subscriptions.hours') }}</option>
+      <option :value="1440">24 {{ t('subscriptions.hours') }}</option>
+    </select>
+    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('subscriptions.autoUpdateIntervalHint') }}</p>
   </div>
 
   <!-- 专属拉取代理 -->

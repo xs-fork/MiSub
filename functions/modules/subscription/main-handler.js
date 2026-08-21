@@ -28,6 +28,19 @@ function maskSensitiveLogValue(value) {
     return `${text.slice(0, 4)}…${text.slice(-4)} (${text.length})`;
 }
 
+function parseBooleanEnvFlag(value) {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized) return null;
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return null;
+}
+
+function resolveEnvSkipTlsVerify(env) {
+    return parseBooleanEnvFlag(env?.MISUB_SKIP_TLS_VERIFY);
+}
+
 const PROFILE_DOWNLOAD_COUNT_PREFIX = 'misub_profile_download_count_';
 
 function getProfileDownloadCountKey(profile) {
@@ -457,6 +470,10 @@ export async function handleMisubRequest(context) {
     }
     // 关键：我们在这里定义了 `config`，后续都应该使用它
     const config = migrateConfigSettings({ ...defaultSettings, ...settings });
+    const envSkipTlsVerify = resolveEnvSkipTlsVerify(env);
+    if (envSkipTlsVerify !== null) {
+        config.builtinSkipCertVerify = envSkipTlsVerify;
+    }
     context.config = config;
     context.accessLogPersistenceMode = config.accessLogPersistenceMode || 'light';
 
