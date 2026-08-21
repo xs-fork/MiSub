@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: misub
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
     environment:
       PORT: 8787
       NODE_OPTIONS: ${NODE_OPTIONS:---disable-warning=ExperimentalWarning}
