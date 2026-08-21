@@ -37,7 +37,7 @@ const handleCardClick = (node) => {
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-y-auto">
+  <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
     <!-- 移动端 Mini List-Card 视图 -->
     <div class="block space-y-3 lg:hidden">
       <div 

@@ -574,10 +574,8 @@ export async function handleMisubRequest(context) {
                     });
                 }
             }
-            // [新增] 增加订阅组下载计数
-            // 仅在非回调请求时及非内部请求时增加计数(避免重复计数)
-            // 且仅当开启访问日志时才计数
-            if (!url.searchParams.has('callback_token') && !shouldSkipLogging && config.enableAccessLog) {
+            // 增加订阅组下载计数。下载次数与访问日志开关独立，避免关闭日志后统计也停止。
+            if (!url.searchParams.has('callback_token') && !shouldSkipLogging) {
                 try {
                     const downloadCountKey = getProfileDownloadCountKey(profile);
                     const currentCount = Number(await storageAdapter.get(downloadCountKey)) || 0;

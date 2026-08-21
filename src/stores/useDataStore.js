@@ -33,6 +33,9 @@ export const useDataStore = defineStore('data', () => {
 
     // Derived Dirty State (from Editor)
     const isDirty = computed(() => editorStore.isDirty);
+    let autoSaveTimer = null;
+    let autoSaveRetryTimer = null;
+    let changeVersion = 0;
 
     // --- Getters ---
     const activeSubscriptions = computed(() => subscriptions.value.filter(sub => sub.enabled));
@@ -111,6 +114,7 @@ export const useDataStore = defineStore('data', () => {
 
         isLoading.value = true;
         saveState.value = 'saving';
+        const savingVersion = changeVersion;
         
         // 保存前执行数据自愈，确保发往后端的数据是干净的
         pruneInvalidReferences();
@@ -147,7 +151,15 @@ export const useDataStore = defineStore('data', () => {
 
             showToast(t('store.dataSaved'), 'success');
             lastUpdated.value = new Date();
-            clearDirty();
+            if (changeVersion === savingVersion) {
+                clearDirty();
+            } else {
+                editorStore.markDirty();
+                clearTimeout(autoSaveTimer);
+                autoSaveTimer = setTimeout(() => {
+                    void saveDirtyData();
+                }, 300);
+            }
             saveState.value = 'success';
 
             // Auto reset idle state
@@ -176,6 +188,59 @@ export const useDataStore = defineStore('data', () => {
         } finally {
             isLoading.value = false;
         }
+    }
+
+    async function saveSubscription(subscription, { isNew = false } = {}) {
+        const item = { ...subscription };
+        delete item.isUpdating;
+        const result = await api.post('/api/misubs', {
+            diff: {
+                subscriptions: isNew
+                    ? { added: [item], updated: [], removed: [] }
+                    : { added: [], updated: [item], removed: [] }
+            }
+        });
+        if (!result.success) throw new Error(result.message || t('store.saveFailed'));
+        const savedSubscription = result.data?.misubs?.find(entry => entry.id === item.id);
+        if (savedSubscription) {
+            const index = subscriptions.value.findIndex(entry => entry.id === item.id);
+            if (index === -1) subscriptions.value.unshift(savedSubscription);
+            else subscriptions.value[index] = savedSubscription;
+        }
+        lastUpdated.value = new Date();
+        dataCache.set({
+            misubs: subscriptions.value,
+            profiles: profiles.value,
+            ruleTemplates: ruleTemplates.value,
+            config: settingsStore.config
+        });
+        return result;
+    }
+
+    async function saveProfile(profile, { isNew = false } = {}) {
+        const item = JSON.parse(JSON.stringify(profile));
+        const result = await api.post('/api/misubs', {
+            diff: {
+                profiles: isNew
+                    ? { added: [item], updated: [], removed: [] }
+                    : { added: [], updated: [item], removed: [] }
+            }
+        });
+        if (!result.success) throw new Error(result.message || t('store.saveFailed'));
+        const savedProfile = result.data?.profiles?.find(entry => entry.id === item.id);
+        if (savedProfile) {
+            const index = profiles.value.findIndex(entry => entry.id === item.id);
+            if (index === -1) profiles.value.unshift(savedProfile);
+            else profiles.value[index] = savedProfile;
+        }
+        lastUpdated.value = new Date();
+        dataCache.set({
+            misubs: subscriptions.value,
+            profiles: profiles.value,
+            ruleTemplates: ruleTemplates.value,
+            config: settingsStore.config
+        });
+        return result;
     }
 
     async function saveSettings(newSettings) {
@@ -396,14 +461,37 @@ export const useDataStore = defineStore('data', () => {
 
     // --- Dirty State Proxies ---
     function markDirty() {
+        changeVersion += 1;
         if (saveState.value === 'success') {
             saveState.value = 'idle';
         }
         editorStore.markDirty();
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => {
+            void saveDirtyData();
+        }, 300);
     }
 
     function clearDirty() {
+        clearTimeout(autoSaveTimer);
+        clearTimeout(autoSaveRetryTimer);
         editorStore.clearDirty();
+    }
+
+    async function saveDirtyData() {
+        if (!editorStore.isDirty) return;
+        if (isLoading.value) {
+            clearTimeout(autoSaveRetryTimer);
+            autoSaveRetryTimer = setTimeout(() => {
+                void saveDirtyData();
+            }, 500);
+            return;
+        }
+        try {
+            await saveData();
+        } catch (error) {
+            console.error('[Store] Automatic save failed:', error);
+        }
     }
 
     return {
@@ -425,6 +513,8 @@ export const useDataStore = defineStore('data', () => {
         // Actions
         fetchData,
         saveData,
+        saveSubscription,
+        saveProfile,
         saveSettings,
         fetchRuleTemplates,
         saveRuleTemplates,

@@ -39,6 +39,7 @@ const handleResize = () => {
 // 响应式数据
 const loading = ref(false);
 const error = ref('');
+const loadDurationMs = ref(null);
 const allNodes = ref([]); // 存储所有节点
 const currentPage = ref(1);
 const pageSize = ref(24);
@@ -188,6 +189,7 @@ const resetState = () => {
   protocolFilter.value = 'all';
   regionFilter.value = 'all';
   searchQuery.value = '';
+  loadDurationMs.value = null;
   showProcessed.value = false;
   error.value = '';
   allNodes.value = [];
@@ -240,6 +242,8 @@ const loadNodes = async () => {
 
   loading.value = true;
   error.value = '';
+  loadDurationMs.value = null;
+  const loadStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
   try {
     const requestData = {
@@ -318,6 +322,8 @@ const loadNodes = async () => {
 
     allNodes.value = [];
   } finally {
+    const loadFinishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    loadDurationMs.value = Math.max(0, Math.round(loadFinishedAt - loadStartedAt));
     loading.value = false;
   }
 };
@@ -477,6 +483,9 @@ const goToPage = (page) => {
           </div>
           <p class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-widest pl-3.5">
             {{ subtitle }}
+            <span v-if="loadDurationMs !== null" class="ml-2 normal-case tracking-normal text-gray-400 dark:text-gray-500">
+              · {{ t('nodePreview.loadDuration', { duration: loadDurationMs }) }}
+            </span>
           </p>
         </div>
         <div class="flex items-center gap-3 self-end sm:self-auto">
@@ -501,6 +510,7 @@ const goToPage = (page) => {
     </template>
 
     <template #body>
+      <div class="flex h-full min-h-0 flex-col overflow-hidden">
 
       <!-- 统计信息 -->
       <div v-if="!loading && !error && Object.keys(protocolStats).length > 0" class="border-b border-gray-100 bg-gray-50/30 px-4 py-6 dark:border-gray-800/50 dark:bg-gray-900/10 sm:px-8">
@@ -593,7 +603,7 @@ const goToPage = (page) => {
       />
 
       <!-- 节点列表 -->
-      <div class="flex-1 overflow-hidden bg-white dark:bg-gray-800" :class="{ 'pb-24 sm:pb-28': pickingMode }" style="min-height: 0;">
+      <div class="min-h-0 flex-1 overflow-hidden bg-white dark:bg-gray-800" :class="{ 'pb-24 sm:pb-28': pickingMode }">
         <div class="h-full overflow-y-auto px-4 py-4 sm:px-6">
           <!-- 加载状态 -->
           <div v-if="loading" class="flex h-64 items-center justify-center">
@@ -630,7 +640,7 @@ const goToPage = (page) => {
           </div>
 
           <!-- 节点列表/卡片视图 -->
-          <div v-else class="flex h-full flex-col">
+          <div v-else class="flex h-full min-h-0 flex-col">
             <!-- 简洁列表视图 (仅大屏桌面端) -->
             <NodeList
               v-if="effectiveViewMode === 'list'"
@@ -668,6 +678,7 @@ const goToPage = (page) => {
         :total-items="filteredTotalCount"
         @go-to-page="goToPage"
       />
+      </div>
     </template>
   </Modal>
 

@@ -99,7 +99,7 @@ test-screenshots/
 .agent/
 .shared/
 # Docker (Closed Source)
-docker/
+# docker/
 data/
 /brain/
 /scratch/

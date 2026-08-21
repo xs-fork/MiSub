@@ -75,10 +75,26 @@ const orderedSelectedSubs = computed({
     <div
       class="overflow-y-auto space-y-2 p-3 bg-gray-50 dark:bg-gray-900/50 misub-radius-md border dark:border-gray-700 h-36 lg:h-64">
       <div v-for="sub in filteredSubscriptions" :key="sub.id">
-        <label class="flex items-center space-x-3 cursor-pointer">
-          <input type="checkbox" :checked="selectedIds.includes(sub.id)" @change="emit('toggle-selection', sub.id)"
-            class="h-4 w-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-          <span class="text-sm text-gray-800 dark:text-gray-200 truncate" :title="sub.name">{{ sub.name || t('subscriptions.unnamed') }}</span>
+        <label
+          class="flex items-center space-x-3 rounded px-1 py-1"
+          :class="sub.enabled === false && !selectedIds.includes(sub.id) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'"
+        >
+          <input
+            type="checkbox"
+            :checked="selectedIds.includes(sub.id)"
+            :disabled="sub.enabled === false && !selectedIds.includes(sub.id)"
+            @change="emit('toggle-selection', sub.id)"
+            class="h-4 w-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <span class="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-200" :title="sub.name">
+            {{ sub.name || t('subscriptions.unnamed') }}
+          </span>
+          <span
+            v-if="sub.enabled === false"
+            class="shrink-0 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/10 dark:text-gray-400"
+          >
+            {{ t('profiles.disabled') }}
+          </span>
         </label>
       </div>
       <div v-if="filteredSubscriptions.length === 0" class="text-center text-gray-500 text-sm py-4">
@@ -105,8 +121,14 @@ const orderedSelectedSubs = computed({
               </svg>
             </span>
             <span class="text-xs font-medium text-indigo-600 dark:text-indigo-400 w-5">{{ index + 1 }}</span>
-            <span class="text-sm text-gray-800 dark:text-gray-200 truncate flex-1" :title="element.name">
+            <span class="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-200" :title="element.name">
               {{ element.name || t('subscriptions.unnamed') }}
+            </span>
+            <span
+              v-if="element.enabled === false"
+              class="shrink-0 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/10 dark:text-gray-400"
+            >
+              {{ t('profiles.disabled') }}
             </span>
             <button @click="emit('toggle-selection', element.id)"
               class="text-gray-400 hover:text-red-500 transition-colors" :title="t('profileModal.remove')">

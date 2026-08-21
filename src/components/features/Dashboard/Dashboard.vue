@@ -45,19 +45,14 @@ const { showToast } = useToastStore();
 const { t } = useI18n();
 const uiStore = useUIStore();
 const dataStore = useDataStore();
-const { settings, isDirty, isLoading } = storeToRefs(dataStore); // Use store refs
+const { settings, isLoading } = storeToRefs(dataStore); // Use store refs
 const config = settings; // Compatibility alias for template
-const { clearDirty } = dataStore; // Don't destructure markDirty directly
 if (isDev) {
   console.debug('Dashboard: setup running');
 }
 
-const saveState = ref('idle');
-
-// Wrapper for markDirty to also reset saveState
 const markDirty = () => {
   dataStore.markDirty();
-  saveState.value = 'idle';
 };
 
 // --- 將狀態和邏輯委託給 Composables ---
@@ -132,7 +127,7 @@ const {
   initializeProfiles, handleProfileToggle, handleAddProfile, handleEditProfile,
   handleSaveProfile, handleDeleteProfile, handleDeleteAllProfiles, copyProfileLink, copyClashLink,
   cleanupSubscriptions, cleanupNodes, cleanupAllSubscriptions, cleanupAllNodes,
-} = useProfiles(markDirty);
+} = useProfiles(markDirty, dataStore.saveProfile);
 
 // --- UI State ---
 
@@ -144,7 +139,7 @@ const {
   openAdd: handleAddSubscription,
   openEdit: handleEditSubscription,
   handleSave: handleSaveSubscription
-} = useSubscriptionForms({ addSubscription, updateSubscription });
+} = useSubscriptionForms({ addSubscription, updateSubscription, saveSubscription: dataStore.saveSubscription });
 
 const {
   showModal: showNodeModal,
@@ -202,22 +197,13 @@ const initializeState = async () => {
         nodes: manualNodes.value?.length
       });
     }
-    clearDirty();
   } catch (e) {
     console.error('Dashboard: initializeState error', e);
   }
 };
 
-const handleBeforeUnload = (event) => {
-  if (isDirty.value) {
-    event.preventDefault();
-    event.returnValue = t('common.unsavedLeaveConfirm');
-  }
-};
-
 onMounted(() => {
   initializeState();
-  window.addEventListener('beforeunload', handleBeforeUnload);
   const savedViewMode = localStorage.getItem('manualNodeViewMode');
   if (savedViewMode) {
     manualNodeViewMode.value = savedViewMode;
@@ -227,7 +213,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener('beforeunload', handleBeforeUnload);
   // 停止订阅自动更新定时器
   stopAutoUpdate();
 });
@@ -248,29 +233,6 @@ const setViewMode = (mode) => {
 };
 
 // --- 其他 JS 逻辑 (省略) ---
-const handleDiscard = async () => {
-  // 强制刷新数据，忽略缓存
-  await dataStore.fetchData(true);
-  showToast(t('notices.discardedChanges'));
-};
-
-const handleSave = async () => {
-  saveState.value = 'saving';
-
-  try {
-    await dataStore.saveData();
-
-    saveState.value = 'success';
-
-    if (isSortingNodes.value) isSortingNodes.value = false;
-
-    setTimeout(() => { saveState.value = 'idle'; }, 1500);
-
-  } catch (error) {
-    saveState.value = 'idle';
-  }
-};
-
 
 const handleDeleteSubscriptionWithCleanup = (subId) => {
   deleteSubscription(subId);
@@ -398,7 +360,6 @@ const handleProfileReorder = (profileId, direction) => {
 const formattedTotalRemainingTraffic = computed(() => formatBytes(totalRemainingTraffic.value));
 
 import DashboardHeader from './DashboardHeader.vue';
-import SavePrompt from '../../ui/SavePrompt.vue';
 </script>
 
 <template>
@@ -412,13 +373,6 @@ import SavePrompt from '../../ui/SavePrompt.vue';
       :formatted-total-remaining-traffic="formattedTotalRemainingTraffic"
       @open-log="showLogModal = true"
       @open-bulk-import="showBulkImportModal = true"
-    />
-
-    <SavePrompt 
-      :is-dirty="isDirty" 
-      :save-state="saveState" 
-      @save="handleSave" 
-      @discard="handleDiscard" 
     />
 
     <!-- Main Grid -->

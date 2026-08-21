@@ -20,7 +20,6 @@ const Toast = defineAsyncComponent(() => import('./components/ui/Toast.vue'));
 const Footer = defineAsyncComponent(() => import('./components/layout/Footer.vue'));
 const Dashboard = defineAsyncComponent(() => import('./components/features/Dashboard/Dashboard.vue'));
 const Header = defineAsyncComponent(() => import('./components/layout/Header.vue'));
-const SavePrompt = defineAsyncComponent(() => import('./components/ui/SavePrompt.vue'));
 const ScrollToTop = defineAsyncComponent(() => import('./components/ui/ScrollToTop.vue'));
 const LegacyD1MigrationModal = defineAsyncComponent(() => import('./components/modals/LegacyD1MigrationModal.vue'));
 const VersionChangelogModal = defineAsyncComponent(() => import('./components/modals/VersionChangelogModal.vue'));
@@ -38,7 +37,6 @@ const { checkSession, login, logout } = sessionStore;
 const toastStore = useToastStore();
 
 const dataStore = useDataStore();
-const { isDirty, saveState } = storeToRefs(dataStore);
 
 const uiStore = useUIStore();
 const { layoutMode } = storeToRefs(uiStore);
@@ -85,10 +83,6 @@ const shouldCenterMain = computed(() =>
   sessionState.value !== 'loggedIn' &&
   sessionState.value !== 'loading' &&
   !isPublicRoute.value
-);
-
-const showSavePrompt = computed(() =>
-  layoutMode.value === 'modern' && (isDirty.value || saveState.value === 'success')
 );
 
 const showLegacyD1MigrationModal = ref(false);
@@ -174,14 +168,6 @@ const handleVersionModalSuppress = () => {
   versionStore.suppressUpdateModal();
 };
 
-const handleSave = async () => {
-  await dataStore.saveData();
-};
-const handleDiscard = async () => {
-  await dataStore.fetchData(true);
-  toastStore.showToast(t('notices.discardedChanges'));
-};
-
 const isCustomPageFullWidth = computed(() => {
   if (!isPublicRoute.value) return false;
   const cp = sessionStore.publicConfig?.customPage;
@@ -248,8 +234,6 @@ aria-live="polite"
 <button @click="showUpdateNotice = false" class="rounded-md px-2 py-1 text-sm hover:bg-amber-100/80 dark:hover:bg-white/10">{{ t('actions.gotIt') }}</button>
 </div>
 </div>
-
-        <SavePrompt :is-dirty="showSavePrompt" :save-state="saveState" @save="handleSave" @discard="handleDiscard" />
 
         <router-view v-if="layoutMode === 'modern'" v-slot="{ Component }">
           <transition name="fade" mode="out-in">

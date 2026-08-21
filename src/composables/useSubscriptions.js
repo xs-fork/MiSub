@@ -393,7 +393,10 @@ export function useSubscriptions(markDirty) {
     }
 
     // 停止旧定时器
-    stopAutoUpdate();
+    if (autoUpdateTimerId) {
+      clearInterval(autoUpdateTimerId);
+      autoUpdateTimerId = null;
+    }
 
     // 启动新定时器
     currentIntervalMs = intervalMs;

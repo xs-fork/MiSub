@@ -5,7 +5,7 @@ import { t } from '../i18n/index.js';
 
 const isDev = import.meta.env.DEV;
 
-export function useSubscriptionForms({ addSubscription, updateSubscription }) {
+export function useSubscriptionForms({ addSubscription, updateSubscription, saveSubscription }) {
     const { showToast } = useToastStore();
     const showModal = ref(false);
     const isNew = ref(false);
@@ -50,7 +50,7 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
         }
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!editingSubscription.value || !editingSubscription.value.url) {
             showToast(t('subscriptions.urlRequired'), 'error');
             return;
@@ -60,10 +60,16 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
             return;
         }
 
-        if (isNew.value) {
-            addSubscription({ ...editingSubscription.value, id: generateSubscriptionId() });
+        const item = isNew.value
+            ? { ...editingSubscription.value, id: generateSubscriptionId() }
+            : editingSubscription.value;
+
+        if (typeof saveSubscription === 'function') {
+            await saveSubscription(item, { isNew: isNew.value });
+        } else if (isNew.value) {
+            addSubscription(item);
         } else {
-            updateSubscription(editingSubscription.value);
+            updateSubscription(item);
         }
         showModal.value = false;
     };

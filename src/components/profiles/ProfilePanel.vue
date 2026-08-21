@@ -10,6 +10,10 @@ const { t } = useI18n();
 
 const props = defineProps({
   profiles: Array,
+  subscriptions: {
+    type: Array,
+    default: () => []
+  },
   paginatedProfiles: {
     type: Array,
     default: () => []
@@ -137,6 +141,7 @@ const handleMoveDown = (profileId) => {
         >
           <ProfileCard
             :profile="profile"
+            :subscriptions="subscriptions"
             :is-sorting="isSorting"
             :compact="compact"
             @edit="handleEdit(profile.id)"

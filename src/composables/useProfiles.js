@@ -5,7 +5,7 @@ import { useToastStore } from '../stores/toast';
 import { generateProfileId } from '../utils/id.js';
 import { t } from '../i18n/index.js';
 
-export function useProfiles(markDirty) {
+export function useProfiles(markDirty, saveProfile) {
   const { showToast } = useToastStore();
   const dataStore = useDataStore();
   const { profiles, settings } = storeToRefs(dataStore);
@@ -96,7 +96,7 @@ export function useProfiles(markDirty) {
     }
   };
 
-  const handleSaveProfile = (profileData) => {
+  const handleSaveProfile = async (profileData) => {
     if (!profileData || !profileData.name) {
       showToast(t('profiles.nameRequired'), 'error');
       return;
@@ -108,15 +108,23 @@ export function useProfiles(markDirty) {
         return;
       }
     }
-    if (isNewProfile.value) {
-      dataStore.addProfile({ ...profileData, id: generateProfileId() });
+    const item = isNewProfile.value
+      ? { ...profileData, id: generateProfileId() }
+      : profileData;
+    const savedIndividually = typeof saveProfile === 'function';
+    if (savedIndividually) {
+      await saveProfile(item, { isNew: isNewProfile.value });
+    } else if (isNewProfile.value) {
+      dataStore.addProfile(item);
     } else {
       const index = profiles.value.findIndex(p => p.id === profileData.id);
       if (index !== -1) {
         profiles.value[index] = profileData;
       }
     }
-    markDirty();
+    if (!savedIndividually) {
+      markDirty();
+    }
     showProfileModal.value = false;
   };
 

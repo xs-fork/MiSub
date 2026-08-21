@@ -1,5 +1,5 @@
 <script setup>
-import { ref, defineAsyncComponent } from 'vue';
+import { ref, defineAsyncComponent, onMounted } from 'vue';
 import { useDataStore } from '../stores/useDataStore.js';
 import { useProfiles } from '../composables/useProfiles.js';
 import ProfilePanel from '../components/profiles/ProfilePanel.vue';
@@ -21,11 +21,15 @@ const {
   handleProfileToggle, handleAddProfile, handleEditProfile,
   handleSaveProfile, handleDeleteProfile, handleDeleteAllProfiles,
   filteredProfiles, searchQuery: profileSearchQuery, profilesCurrentPage, profilesTotalPages, paginatedProfiles, changeProfilesPage
-} = useProfiles(markDirty);
+} = useProfiles(markDirty, dataStore.saveProfile);
 
 // For ProfileModal need access to all subscriptions and nodes
 const { subscriptions } = storeToRefs(dataStore);
 const { manualNodes } = useManualNodes(markDirty);
+
+onMounted(() => {
+  void dataStore.fetchData(true);
+});
 
 const handleProfileReorder = (profileId, direction) => {
   const fromIndex = profiles.value.findIndex(profile => profile.id === profileId || profile.customId === profileId);
@@ -112,7 +116,7 @@ const handleQRCode = (profileId) => {
   <div class="max-w-(--breakpoint-xl) mx-auto">
 
 
-    <ProfilePanel :profiles="profiles" :paginated-profiles="paginatedProfiles" :current-page="profilesCurrentPage"
+    <ProfilePanel :profiles="profiles" :subscriptions="subscriptions" :paginated-profiles="paginatedProfiles" :current-page="profilesCurrentPage"
       :search-query="profileSearchQuery" :filtered-count="filteredProfiles.length"
       searchable
       :total-pages="profilesTotalPages" :is-sorting="isProfileSorting" @add="handleAddProfile" @edit="handleEditProfile" @delete="handleDeleteProfile"

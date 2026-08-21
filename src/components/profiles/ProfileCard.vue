@@ -17,13 +17,30 @@ const props = defineProps({
   compact: {
     type: Boolean,
     default: false,
+  },
+  subscriptions: {
+    type: Array,
+    default: () => []
   }
 });
 
 const emit = defineEmits(['delete', 'change', 'edit', 'open-copy', 'preview', 'move-up', 'move-down', 'view-logs', 'qrcode']);
 
-const subscriptionCount = computed(() => Array.isArray(props.profile?.subscriptions) ? props.profile.subscriptions.length : 0);
+const profileSubscriptionIds = computed(() => new Set(
+  Array.isArray(props.profile?.subscriptions)
+    ? props.profile.subscriptions.map(item => typeof item === 'object' ? item.id : item)
+    : []
+));
+const enabledSubscriptions = computed(() => props.subscriptions.filter(subscription =>
+  profileSubscriptionIds.value.has(subscription.id) && subscription.enabled !== false
+));
+const subscriptionCount = computed(() => enabledSubscriptions.value.length);
 const manualNodeCount = computed(() => Array.isArray(props.profile?.manualNodes) ? props.profile.manualNodes.length : 0);
+const remoteNodeCount = computed(() => {
+  return enabledSubscriptions.value
+    .reduce((total, subscription) => total + (Number(subscription.nodeCount) || 0), 0);
+});
+const totalNodeCount = computed(() => manualNodeCount.value + remoteNodeCount.value);
 const isEnabled = computed(() => props.profile?.enabled !== false);
 const isPublic = computed(() => props.profile?.isPublic === true);
 
@@ -50,8 +67,8 @@ const isPublic = computed(() => props.profile?.isPublic === true);
         <p class="truncate text-lg font-semibold text-gray-900 dark:text-white" :title="profile.name">
           {{ profile.name }}
         </p>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
-          {{ t('profiles.counts', { subscriptions: subscriptionCount, nodes: manualNodeCount }) }}
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+          {{ t('profiles.counts', { subscriptions: subscriptionCount, nodes: totalNodeCount }) }}
         </p>
       </div>
 

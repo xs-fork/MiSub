@@ -221,6 +221,16 @@ watch(() => props.profile, (newProfile) => {
 
     // 确保 operators 数组存在
     profileCopy.operators = Array.isArray(profileCopy.operators) ? profileCopy.operators : [];
+
+    // 编辑时不保留已停用机场的选中状态；仅修改弹窗本地副本，保存时才提交。
+    const enabledSubscriptionIds = new Set(
+      props.allSubscriptions
+        .filter(subscription => subscription.enabled !== false)
+        .map(subscription => subscription.id)
+    );
+    profileCopy.subscriptions = Array.isArray(profileCopy.subscriptions)
+      ? profileCopy.subscriptions.filter(id => enabledSubscriptionIds.has(typeof id === 'object' ? id.id : id))
+      : [];
     
     localProfile.value = profileCopy;
   } else {
@@ -265,6 +275,10 @@ const handleConfirm = () => {
 const toggleSelection = (listName, id) => {
   const list = localProfile.value[listName];
   const index = list.indexOf(id);
+  if (listName === 'subscriptions' && index === -1) {
+    const subscription = props.allSubscriptions.find(item => item.id === id);
+    if (subscription?.enabled === false) return;
+  }
   if (index > -1) {
     list.splice(index, 1);
   } else {
@@ -274,7 +288,9 @@ const toggleSelection = (listName, id) => {
 
 const handleSelectAll = (listName, sourceArray) => {
   const currentSelection = new Set(localProfile.value[listName]);
-  sourceArray.forEach(item => currentSelection.add(item.id));
+  sourceArray
+    .filter(item => listName !== 'subscriptions' || item.enabled !== false)
+    .forEach(item => currentSelection.add(item.id));
   localProfile.value[listName] = Array.from(currentSelection);
 };
 

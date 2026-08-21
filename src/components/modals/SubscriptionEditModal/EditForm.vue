@@ -99,7 +99,7 @@ const testProxyConnectivity = async () => {
     <select
       id="sub-edit-auto-update"
       v-model.number="editingSubscription.autoUpdateInterval"
-      class="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-white/10 dark:bg-white/5 dark:text-gray-200"
+      class="mt-2 w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-white/10 dark:bg-white/[0.035] dark:text-[#f7f8f8]"
     >
       <option :value="0">{{ t('subscriptions.autoUpdateDisabled') }}</option>
       <option :value="15">15 {{ t('subscriptions.minutes') }}</option>
@@ -107,7 +107,9 @@ const testProxyConnectivity = async () => {
       <option :value="60">1 {{ t('subscriptions.hours') }}</option>
       <option :value="360">6 {{ t('subscriptions.hours') }}</option>
       <option :value="720">12 {{ t('subscriptions.hours') }}</option>
-      <option :value="1440">24 {{ t('subscriptions.hours') }}</option>
+      <option :value="1440">1 {{ t('subscriptions.days') }}</option>
+      <option :value="4320">3 {{ t('subscriptions.days') }}</option>
+      <option :value="10080">7 {{ t('subscriptions.days') }}</option>
     </select>
     <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('subscriptions.autoUpdateIntervalHint') }}</p>
   </div>
