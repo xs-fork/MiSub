@@ -175,15 +175,15 @@ describe('subscription official website field', () => {
     expect(createWrapper(-1).get('[data-testid="subscription-expiry-badge"]').classes()).toContain('text-red-700');
   });
 
-  it('marks failed, exhausted, and zero-node subscriptions as abnormal', () => {
+  it('marks only failed subscription updates as abnormal', () => {
     const mountCard = (misub) => mount(Card, {
       props: { misub: { id: 'sub_1', name: '测试机场', url: 'https://api.example.com/sub', enabled: true, ...misub } },
       global: withZhI18n({ Switch: { template: '<button class="switch-stub"></button>' } })
     });
 
     expect(mountCard({ lastError: 'HTTP 403' }).get('[data-testid="subscription-health-badge"]').text()).toBe('更新异常');
-    expect(mountCard({ userInfo: { total: 100, upload: 50, download: 50 } }).get('[data-testid="subscription-health-badge"]').text()).toBe('流量已耗尽');
-    expect(mountCard({ lastUpdate: '2026-09-03T00:00:00.000Z', nodeCount: 0 }).get('[data-testid="subscription-health-badge"]').text()).toBe('节点为 0');
+    expect(mountCard({ userInfo: { total: 100, upload: 50, download: 50 } }).find('[data-testid="subscription-health-badge"]').exists()).toBe(false);
+    expect(mountCard({ lastUpdate: '2026-09-03T00:00:00.000Z', nodeCount: 0 }).find('[data-testid="subscription-health-badge"]').exists()).toBe(false);
   });
 
   it('shows body-derived traffic as remaining instead of zero usage and a false total', () => {

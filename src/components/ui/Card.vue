@@ -158,19 +158,6 @@ const subscriptionHealth = computed(() => {
   if (props.misub.lastError) {
     return { isAbnormal: true, reason: t('subscriptions.healthUpdateFailed') };
   }
-
-  const info = props.misub.userInfo;
-  const total = Number(info?.total || 0);
-  const used = Number(info?.upload || 0) + Number(info?.download || 0);
-  if (total > 0 && used >= total) {
-    return { isAbnormal: true, reason: t('subscriptions.healthTrafficExhausted') };
-  }
-
-  const hasUpdated = Boolean(props.misub.lastUpdate || props.misub.lastUpdated);
-  if (hasUpdated && Number(props.misub.nodeCount) === 0) {
-    return { isAbnormal: true, reason: t('subscriptions.healthNoNodes') };
-  }
-
   return { isAbnormal: false, reason: '' };
 });
 
