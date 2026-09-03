@@ -103,7 +103,7 @@ const handleOpenCopy = (profileId) => {
 };
 
 const {
-  subscriptions, subsCurrentPage, subsTotalPages, paginatedSubscriptions, totalRemainingTraffic,
+  subscriptions, subsCurrentPage, subsTotalPages, paginatedSubscriptions, totalRemainingTraffic, subscriptionFilters,
   changeSubsPage, addSubscription, updateSubscription, deleteSubscription, deleteAllSubscriptions,
   addSubscriptionsFromBulk, handleUpdateNodeCount, batchUpdateAllSubscriptions, startAutoUpdate, stopAutoUpdate,
   restartAutoUpdate, reorderSubscriptions,
@@ -139,7 +139,11 @@ const {
   openAdd: handleAddSubscription,
   openEdit: handleEditSubscription,
   handleSave: handleSaveSubscription
-} = useSubscriptionForms({ addSubscription, updateSubscription, saveSubscription: dataStore.saveSubscription });
+} = useSubscriptionForms({
+  addSubscription,
+  updateSubscription,
+  saveSubscription: dataStore.saveSubscription
+});
 
 const {
   showModal: showNodeModal,
@@ -208,7 +212,7 @@ onMounted(() => {
   if (savedViewMode) {
     manualNodeViewMode.value = savedViewMode;
   }
-  // 启动订阅自动更新定时器（每30分钟）
+  // 启动订阅自动更新定时器，由调度器按每个订阅的有效间隔执行
   startAutoUpdate();
 });
 
@@ -380,6 +384,8 @@ import DashboardHeader from './DashboardHeader.vue';
       <div class="space-y-8 lg:space-y-9 xl:col-span-2">
         <!-- Subscription Panel -->
         <SubscriptionPanel :subscriptions="subscriptions" :paginated-subscriptions="paginatedSubscriptions"
+          :global-update-interval="Number(settings?.autoUpdateInterval) || 0"
+          :filters="subscriptionFilters" @update-filters="subscriptionFilters = $event"
           :current-page="subsCurrentPage" :total-pages="subsTotalPages" :is-sorting="isSortingSubs"
           @add="handleAddSubscription" @delete="handleDeleteSubscriptionWithCleanup" @change-page="changeSubsPage"
           @update-node-count="handleUpdateNodeCount" @refresh-all="batchUpdateAllSubscriptions"

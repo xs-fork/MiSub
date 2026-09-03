@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, defineAsyncComponent } from 'vue';
+import { computed, ref, defineAsyncComponent, onMounted, onUnmounted } from 'vue';
 import { useDataStore } from '../stores/useDataStore.js';
 import { useBulkImportLogic } from '../composables/useBulkImportLogic.js';
 import { storeToRefs } from 'pinia';
@@ -17,14 +17,16 @@ import { useI18n } from '../i18n/index.js';
 const { t } = useI18n();
 
 const dataStore = useDataStore();
-const { settings, profiles, isLoading, lastUpdated } = storeToRefs(dataStore);
+const { settings, profiles, isLoading } = storeToRefs(dataStore);
 const { activeProfiles, markDirty } = dataStore;
 
 const {
   totalRemainingTraffic: trafficVal,
   enabledSubscriptionsCount,
   subscriptions,
-  addSubscriptionsFromBulk
+  addSubscriptionsFromBulk,
+  startAutoUpdate,
+  stopAutoUpdate
 } = useSubscriptions(markDirty);
 
 const { manualNodes, addNodesFromBulk } = useManualNodes(markDirty);
@@ -41,8 +43,27 @@ const subscriptionsCount = computed(() => (subscriptions.value || []).length);
 const activeProfilesCount = computed(() => (activeProfiles || []).length);
 
 const lastUpdatedTime = computed(() => {
-    if (!lastUpdated.value) return t('dashboard.never');
-    return new Date(lastUpdated.value).toLocaleString();
+  const globalInterval = Number(settings.value?.autoUpdateInterval);
+  const candidates = (subscriptions.value || []).filter((sub) => {
+    if (!sub?.lastUpdate && !sub?.lastUpdated) return false;
+    if (globalInterval > 0) {
+      const hasSubscriptionSetting = sub.autoUpdateInterval !== null && sub.autoUpdateInterval !== undefined;
+      return !hasSubscriptionSetting;
+    }
+    return true;
+  });
+
+  const latestTimestamp = candidates.reduce((latest, sub) => {
+    const rawValue = sub.lastUpdate ?? sub.lastUpdated;
+    const timestamp = typeof rawValue === 'number'
+      ? (rawValue < 1e12 ? rawValue * 1000 : rawValue)
+      : Date.parse(rawValue || '');
+    return Number.isFinite(timestamp) && timestamp > latest ? timestamp : latest;
+  }, 0);
+
+  return latestTimestamp > 0
+    ? new Date(latestTimestamp).toLocaleString()
+    : t('dashboard.never');
 });
 
 const trafficStats = computed(() => {
@@ -149,6 +170,14 @@ const QRCodeModal = defineAsyncComponent(() => import('../components/modals/QRCo
 const showQRCodeModal = ref(false);
 const qrCodeUrl = ref('');
 const qrCodeTitle = ref('');
+
+onMounted(() => {
+  startAutoUpdate();
+});
+
+onUnmounted(() => {
+  stopAutoUpdate();
+});
 
 const handleQRCode = (url, title) => {
     qrCodeUrl.value = url;

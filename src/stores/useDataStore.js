@@ -7,6 +7,7 @@ import { createStorageCache } from '../utils/cache-helper.js';
 import { DEFAULT_SETTINGS } from '../constants/default-settings.js';
 import { TIMING } from '../constants/timing.js';
 import { api } from '../lib/http.js';
+import { fetchNodeCount } from '../lib/api.js';
 import { t } from '../i18n/index.js';
 
 const isDev = import.meta.env.DEV;
@@ -206,6 +207,30 @@ export const useDataStore = defineStore('data', () => {
             const index = subscriptions.value.findIndex(entry => entry.id === item.id);
             if (index === -1) subscriptions.value.unshift(savedSubscription);
             else subscriptions.value[index] = savedSubscription;
+        }
+
+        // 新增远程订阅后立即获取一次节点、流量和到期信息。
+        if (isNew && /^https?:\/\//i.test(item.url || '')) {
+            try {
+                const refreshResult = await fetchNodeCount(
+                    item.url,
+                    item.fetchProxy,
+                    Boolean(item.plusAsSpace),
+                    item.customUserAgent
+                );
+                if (refreshResult.success) {
+                    const refreshData = refreshResult.data?.data || refreshResult.data || {};
+                    const refreshedSubscription = subscriptions.value.find(entry => entry.id === item.id);
+                    if (refreshedSubscription) {
+                        refreshedSubscription.nodeCount = refreshData.count || 0;
+                        refreshedSubscription.userInfo = refreshData.userInfo || null;
+                        refreshedSubscription.lastError = null;
+                        refreshedSubscription.lastUpdate = new Date().toISOString();
+                    }
+                }
+            } catch (error) {
+                console.warn('[Store] Initial subscription refresh failed:', error);
+            }
         }
         lastUpdated.value = new Date();
         dataCache.set({

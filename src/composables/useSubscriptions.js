@@ -22,11 +22,33 @@ export function useSubscriptions(markDirty) {
   });
 
   const searchQuery = ref('');
+  const subscriptionFilters = ref({ status: 'all', proxy: 'all', update: 'all', expiry: 'all', sort: 'default' });
+  const parseUpdateTime = (sub) => {
+    const value = sub?.lastUpdate ?? sub?.lastUpdated;
+    if (typeof value === 'number') return value < 1e12 ? value * 1000 : value;
+    const parsed = Date.parse(value || '');
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const getExpiryTime = (sub) => {
+    const value = Number(sub?.userInfo?.expire);
+    return value > 0 ? value * 1000 : 0;
+  };
+  const getEffectiveUpdateMode = (sub) => {
+    if (sub?.autoUpdateInterval === null || sub?.autoUpdateInterval === undefined) return 'follow';
+    return Number(sub.autoUpdateInterval) > 0 ? 'custom' : 'manual';
+  };
   const filteredSubscriptions = computed(() => {
     const query = searchQuery.value.trim().toLowerCase();
-    if (!query) return subscriptions.value;
-
-    return subscriptions.value.filter((sub) => [
+    const filters = subscriptionFilters.value;
+    const now = Date.now();
+    const filtered = subscriptions.value.filter((sub) => {
+      const expiry = getExpiryTime(sub);
+      const matchesExpiry = filters.expiry === 'all'
+        || (filters.expiry === 'unknown' && !expiry)
+        || (filters.expiry === 'active' && expiry > now + 7 * 24 * 60 * 60 * 1000)
+        || (filters.expiry === 'soon' && expiry > now && expiry <= now + 7 * 24 * 60 * 60 * 1000)
+        || (filters.expiry === 'expired' && expiry > 0 && expiry <= now);
+      const matchesQuery = !query || [
       sub.name,
       sub.description,
       sub.remark,
@@ -34,7 +56,19 @@ export function useSubscriptions(markDirty) {
       sub.website,
       sub.url,
       sub.customId
-    ].some(value => String(value || '').toLowerCase().includes(query)));
+      ].some(value => String(value || '').toLowerCase().includes(query));
+      return matchesQuery
+        && (filters.status === 'all' || (filters.status === 'enabled' ? sub.enabled !== false : sub.enabled === false))
+        && (filters.proxy === 'all' || (filters.proxy === 'enabled' ? Boolean(String(sub.fetchProxy || '').trim()) : !String(sub.fetchProxy || '').trim()))
+        && (filters.update === 'all' || getEffectiveUpdateMode(sub) === filters.update)
+        && matchesExpiry;
+    });
+
+    if (filters.sort === 'updated-desc') filtered.sort((a, b) => parseUpdateTime(b) - parseUpdateTime(a));
+    if (filters.sort === 'updated-asc') filtered.sort((a, b) => (parseUpdateTime(a) || Infinity) - (parseUpdateTime(b) || Infinity));
+    if (filters.sort === 'expiry-asc') filtered.sort((a, b) => (getExpiryTime(a) || Infinity) - (getExpiryTime(b) || Infinity));
+    if (filters.sort === 'name-asc') filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    return filtered;
   });
 
   const subsCurrentPage = ref(1);
@@ -70,6 +104,9 @@ export function useSubscriptions(markDirty) {
   watch(searchQuery, () => {
     subsCurrentPage.value = 1;
   });
+  watch(subscriptionFilters, () => {
+    subsCurrentPage.value = 1;
+  }, { deep: true });
 
   function changeSubsPage(page) {
     if (page < 1 || page > subsTotalPages.value) return;
@@ -103,7 +140,8 @@ export function useSubscriptions(markDirty) {
         subToUpdate.url,
         subToUpdate.fetchProxy,
         Boolean(subToUpdate.plusAsSpace),
-        subToUpdate.customUserAgent
+        subToUpdate.customUserAgent,
+        subToUpdate.name
       );
 
       // 清除超时保护
@@ -155,6 +193,7 @@ export function useSubscriptions(markDirty) {
                 subToUpdate.nodeCount = data.count || 0;
                 subToUpdate.userInfo = data.userInfo || null;
                 subToUpdate.lastError = null; // 成功后清除错误状态
+                subToUpdate.lastUpdate = new Date().toISOString();
 
                 if (!isInitialLoad) {
                     showToast(t('subscriptions.updateSuccess', { name: subToUpdate.name || t('subscriptions.fallbackName') }), 'success');
@@ -329,94 +368,66 @@ export function useSubscriptions(markDirty) {
   }
 
   // ========== 定时自动更新功能 ==========
-  const DEFAULT_INTERVAL_MS = TIMING.AUTO_UPDATE_INTERVAL_MS;
-  let autoUpdateTimerId = null;
   let subscriptionUpdateTimerId = null;
-  let currentIntervalMs = DEFAULT_INTERVAL_MS;
+  let isAutoUpdateRunning = false;
+
+  function getEffectiveUpdateInterval(sub) {
+    const hasSubscriptionSetting = sub?.autoUpdateInterval !== null && sub?.autoUpdateInterval !== undefined;
+    const subscriptionInterval = Number(sub?.autoUpdateInterval);
+    if (hasSubscriptionSetting) return subscriptionInterval > 0 ? subscriptionInterval : 0;
+    const globalInterval = Number(dataStore.settings?.autoUpdateInterval);
+    return globalInterval > 0 ? globalInterval : 0;
+  }
 
   async function autoUpdateAllSubscriptions() {
+    if (isAutoUpdateRunning) return;
+    isAutoUpdateRunning = true;
     try {
-      const subsToUpdate = subscriptions.value.filter(sub =>
-        sub.enabled && sub.url && sub.url.startsWith('http') && !sub.isUpdating && !(Number(sub.autoUpdateInterval) > 0)
-      );
-      for (const sub of subsToUpdate) {
-        await handleUpdateNodeCount(sub.id, true);
-      }
+      const now = Date.now();
+      const subsToUpdate = subscriptions.value.filter(sub => {
+        const interval = getEffectiveUpdateInterval(sub);
+        if (!sub.enabled || !sub.url?.startsWith('http') || sub.isUpdating || interval <= 0) return false;
+
+        const rawLastUpdate = sub.lastUpdate ?? sub.lastUpdated;
+        const lastUpdate = typeof rawLastUpdate === 'number'
+          ? rawLastUpdate
+          : (Date.parse(rawLastUpdate || '') || Number(sub.lastAutoUpdatedAt) || 0);
+        return !lastUpdate || now - lastUpdate >= interval * 60 * 1000;
+      });
+
+      await Promise.allSettled(subsToUpdate.map(async (sub) => {
+        try {
+          await handleUpdateNodeCount(sub.id, true);
+        } catch (error) {
+          console.warn(`[AutoUpdate] Subscription refresh failed: ${sub.name || sub.id}`, error);
+        }
+      }));
     } catch (e) {
       console.error('Auto update failed', e);
+    } finally {
+      isAutoUpdateRunning = false;
     }
   }
 
   function startSubscriptionAutoUpdate() {
     if (subscriptionUpdateTimerId) return;
+    void autoUpdateAllSubscriptions();
     subscriptionUpdateTimerId = setInterval(() => {
-      const now = Date.now();
-      for (const sub of subscriptions.value) {
-        const interval = Number(sub.autoUpdateInterval);
-        if (!sub.enabled || !sub.url?.startsWith('http') || sub.isUpdating || !(interval > 0)) continue;
-        const lastUpdatedAt = Number(sub.lastAutoUpdatedAt) || 0;
-        if (lastUpdatedAt && now - lastUpdatedAt < interval * 60 * 1000) continue;
-        sub.lastAutoUpdatedAt = now;
-        void handleUpdateNodeCount(sub.id, true);
-      }
+      void autoUpdateAllSubscriptions();
     }, 60 * 1000);
   }
 
   function startAutoUpdate(intervalMinutes = null) {
-    // 如果传入间隔，使用传入值；否则从 settings 读取
-    let intervalMs;
-    if (intervalMinutes !== null) {
-      intervalMs = intervalMinutes * 60 * 1000;
-    } else {
-      const settings = dataStore.settings;
-      const settingsInterval = settings?.autoUpdateInterval;
-      intervalMs = (settingsInterval != null && settingsInterval > 0)
-        ? settingsInterval * 60 * 1000
-        : DEFAULT_INTERVAL_MS;
-    }
-
+    // 机场级设置优先，全局设置只作为未单独配置机场的默认值。
     startSubscriptionAutoUpdate();
-
-    // 如果全局间隔为0，只禁用全局自动更新，不影响订阅自己的间隔
-    if (intervalMs === 0) {
-      if (autoUpdateTimerId) {
-        clearInterval(autoUpdateTimerId);
-        autoUpdateTimerId = null;
-      }
-      if (isDev) console.debug('[AutoUpdate] Disabled by user setting');
-      return;
-    }
-
-    // 如果间隔没变且定时器已运行，不需要重启
-    if (autoUpdateTimerId && intervalMs === currentIntervalMs) {
-      return;
-    }
-
-    // 停止旧定时器
-    if (autoUpdateTimerId) {
-      clearInterval(autoUpdateTimerId);
-      autoUpdateTimerId = null;
-    }
-
-    // 启动新定时器
-    currentIntervalMs = intervalMs;
-    autoUpdateTimerId = setInterval(() => {
-      void autoUpdateAllSubscriptions();
-    }, intervalMs);
-
-
-    if (isDev) console.debug(`[AutoUpdate] Started with interval: ${intervalMs / 60000} minutes`);
+    if (isDev && intervalMinutes !== null) console.debug(`[AutoUpdate] Settings changed: ${intervalMinutes} minutes`);
   }
 
   function stopAutoUpdate() {
-    if (autoUpdateTimerId) {
-      clearInterval(autoUpdateTimerId);
-      autoUpdateTimerId = null;
-      if (isDev) console.debug('[AutoUpdate] Stopped');
-    }
     if (subscriptionUpdateTimerId) {
       clearInterval(subscriptionUpdateTimerId);
       subscriptionUpdateTimerId = null;
+      if (isDev) console.debug('[AutoUpdate] Stopped');
     }
   }
 
@@ -446,6 +457,7 @@ export function useSubscriptions(markDirty) {
     subscriptions,
     filteredSubscriptions,
     searchQuery,
+    subscriptionFilters,
     subsCurrentPage,
     subsTotalPages,
     paginatedSubscriptions,

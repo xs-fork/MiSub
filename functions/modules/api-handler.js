@@ -408,7 +408,10 @@ function redactSettingsForResponse(settings = {}) {
         ...settings,
         webdavBackup: settings.webdavBackup
             ? { ...settings.webdavBackup, password: '' }
-            : settings.webdavBackup
+            : settings.webdavBackup,
+        emailNotification: settings.emailNotification
+            ? { ...settings.emailNotification, smtpPassword: '' }
+            : settings.emailNotification
     };
 }
 
@@ -489,6 +492,13 @@ export async function handleSettingsSave(request, env) {
                     password: oldSettings.webdavBackup.password
                 };
             }
+        }
+        if (newSettings.emailNotification && oldSettings.emailNotification
+            && newSettings.emailNotification.smtpPassword === '') {
+            newSettings.emailNotification = {
+                ...newSettings.emailNotification,
+                smtpPassword: oldSettings.emailNotification.smtpPassword || ''
+            };
         }
         const finalSettings = { ...oldSettings, ...newSettings };
 

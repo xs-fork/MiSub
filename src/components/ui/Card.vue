@@ -9,13 +9,23 @@ const props = defineProps({
   misub: {
     type: Object,
     required: true
+  },
+  globalUpdateInterval: {
+    type: Number,
+    default: 0
   }
 });
 
 const emit = defineEmits(['delete', 'change', 'update', 'edit', 'preview', 'qrcode']);
 const { t } = useI18n();
 const isUrlCopied = ref(false);
+const isUrlVisible = ref(false);
 let copyResetTimer;
+
+const displayedUrl = computed(() => {
+  const url = String(props.misub.url || '');
+  return isUrlVisible.value ? url : '*'.repeat(Math.max(8, Math.min(url.length, 32)));
+});
 
 const copySubscriptionUrl = async () => {
   const url = String(props.misub.url || '').trim();
@@ -94,13 +104,59 @@ const expiryInfo = computed(() => {
         return null;
     }  
     let style = 'text-gray-500 dark:text-gray-400';
-    if (diffDays < 0) style = 'text-red-500 font-bold';
-    else if (diffDays <= 7) style = 'text-orange-500 font-semibold';
+    if (diffDays < 0) style = 'border-red-300 bg-red-100 text-red-700 font-bold dark:border-red-400/40 dark:bg-red-500/15 dark:text-red-300';
+    else if (diffDays <= 7) style = 'border-red-300 bg-red-50 text-red-600 font-bold dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-300';
+    else if (diffDays <= 15) style = 'border-orange-300 bg-orange-50 text-orange-600 font-semibold dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-300';
+    else if (diffDays <= 30) style = 'border-amber-300 bg-amber-50 text-amber-600 font-semibold dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300';
     return {
         date: expiryDate.toLocaleDateString(),
         daysRemaining: diffDays < 0 ? t('subscriptions.expired') : (diffDays === 0 ? t('subscriptions.expiresToday') : t('subscriptions.expiresInDays', { count: diffDays })),
         style: style
     };
+});
+
+const effectiveUpdateInterval = computed(() => {
+  const hasSubscriptionSetting = props.misub.autoUpdateInterval !== null && props.misub.autoUpdateInterval !== undefined;
+  const subscriptionInterval = Number(props.misub.autoUpdateInterval);
+  if (hasSubscriptionSetting) return subscriptionInterval > 0 ? subscriptionInterval : 0;
+  const globalInterval = Number(props.globalUpdateInterval);
+  return globalInterval > 0 ? globalInterval : 0;
+});
+
+const updateStrategy = computed(() => {
+  const hasSubscriptionSetting = props.misub.autoUpdateInterval !== null && props.misub.autoUpdateInterval !== undefined;
+  if (!hasSubscriptionSetting) {
+    return t('subscriptions.autoUpdateFollowGlobal');
+  }
+  if (Number(props.misub.autoUpdateInterval) > 0) {
+    return t('subscriptions.autoUpdateCustom', { interval: formatInterval(Number(props.misub.autoUpdateInterval)) });
+  }
+  return t('subscriptions.autoUpdateDisabled');
+});
+
+const formatInterval = (minutes) => {
+  if (minutes < 60) return `${minutes} ${t('subscriptions.minutes')}`;
+  if (minutes % 1440 === 0) return `${minutes / 1440} ${t('subscriptions.days')}`;
+  if (minutes % 60 === 0) return `${minutes / 60} ${t('subscriptions.hours')}`;
+  return `${minutes} ${t('subscriptions.minutes')}`;
+};
+
+const updateInfo = computed(() => {
+  const rawLastUpdate = props.misub.lastUpdate || props.misub.lastUpdated;
+  const lastUpdate = rawLastUpdate ? new Date(rawLastUpdate) : null;
+  const validLastUpdate = lastUpdate && !Number.isNaN(lastUpdate.getTime()) ? lastUpdate : null;
+  const interval = effectiveUpdateInterval.value;
+  const nextUpdate = validLastUpdate && interval > 0
+    ? new Date(validLastUpdate.getTime() + interval * 60 * 1000)
+    : null;
+
+  return {
+    last: validLastUpdate ? validLastUpdate.toLocaleString() : t('subscriptions.neverUpdated'),
+    next: interval > 0
+      ? (nextUpdate ? nextUpdate.toLocaleString() : t('subscriptions.pendingFirstUpdate'))
+      : t('subscriptions.manualOnly'),
+    interval: interval > 0 ? formatInterval(interval) : t('subscriptions.manualOnly')
+  };
 });
 
 const normalizeWebsiteUrl = (value) => {
@@ -154,7 +210,7 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
             >
               {{ fetchProxyEnabled ? t('subscriptions.fetchProxyEnabled') : t('subscriptions.fetchProxyDisabled') }}
             </span>
-            <span v-if="expiryInfo" class="rounded-full border border-transparent bg-gray-100 px-2 py-0.5 text-[10px] font-medium dark:bg-white/5" :class="expiryInfo.style">
+            <span v-if="expiryInfo" data-testid="subscription-expiry-badge" class="rounded-full border border-transparent bg-gray-100 px-2 py-0.5 text-[10px] font-medium dark:bg-white/5" :class="expiryInfo.style">
               {{ expiryInfo.daysRemaining }}
             </span>
           </div>
@@ -188,7 +244,22 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <svg class="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
           </div>
-        <input type="text" :value="misub.url" readonly class="w-full rounded-lg border border-gray-100 bg-gray-50/80 py-2 pl-9 pr-11 font-mono text-xs text-gray-500 transition-all focus:border-primary-500/30 focus:bg-white focus:outline-none dark:border-white/5 dark:bg-black/20 dark:text-gray-400 dark:focus:bg-black/40" />
+        <input type="text" :value="displayedUrl" readonly class="w-full rounded-lg border border-gray-100 bg-gray-50/80 py-2 pl-9 pr-20 font-mono text-xs text-gray-500 transition-all focus:border-primary-500/30 focus:bg-white focus:outline-none dark:border-white/5 dark:bg-black/20 dark:text-gray-400 dark:focus:bg-black/40" />
+        <button
+          type="button"
+          @click.stop="isUrlVisible = !isUrlVisible"
+          class="absolute inset-y-0 right-10 flex w-10 items-center justify-center text-gray-400 transition-colors hover:text-primary-500 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500/40"
+          :title="isUrlVisible ? t('subscriptions.hideUrl') : t('subscriptions.showUrl')"
+          :aria-label="isUrlVisible ? t('subscriptions.hideUrl') : t('subscriptions.showUrl')"
+        >
+          <svg v-if="isUrlVisible" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <svg v-else class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m3 3 18 18M10.584 10.587a2 2 0 0 0 2.829 2.829M9.88 5.09A10.94 10.94 0 0 1 12 5c4.478 0 8.268 2.943 9.542 7a10.95 10.95 0 0 1-2.04 3.546M6.228 6.228C4.46 7.489 3.135 9.32 2.458 12c1.274 4.057 5.064 7 9.542 7 1.05 0 2.06-.17 3-.488" />
+          </svg>
+        </button>
         <button
           type="button"
           @click.stop="copySubscriptionUrl"
@@ -223,6 +294,28 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
         </div>
         <div v-else class="text-xs text-gray-400">
           {{ t('subscriptions.noTrafficData') }}
+        </div>
+        <div class="grid grid-cols-1 gap-1 border-t border-gray-200/70 pt-2 text-[11px] dark:border-white/10 sm:grid-cols-2">
+          <span class="text-gray-500 dark:text-gray-400 sm:col-span-2">
+            {{ t('subscriptions.autoUpdateStrategy') }}:
+            <span class="font-medium text-gray-700 dark:text-gray-200">{{ updateStrategy }}</span>
+          </span>
+          <span class="text-gray-500 dark:text-gray-400">
+            {{ t('subscriptions.expiryDate') }}:
+            <span class="font-medium text-gray-700 dark:text-gray-200">{{ expiryInfo?.date || t('subscriptions.noExpiryData') }}</span>
+          </span>
+          <span class="text-gray-500 dark:text-gray-400">
+            {{ t('subscriptions.updateInterval') }}:
+            <span class="font-medium text-gray-700 dark:text-gray-200">{{ updateInfo.interval }}</span>
+          </span>
+          <span class="text-gray-500 dark:text-gray-400">
+            {{ t('subscriptions.lastUpdated') }}:
+            <span class="font-medium text-gray-700 dark:text-gray-200">{{ updateInfo.last }}</span>
+          </span>
+          <span class="text-gray-500 dark:text-gray-400">
+            {{ t('subscriptions.nextUpdate') }}:
+            <span class="font-medium text-gray-700 dark:text-gray-200">{{ updateInfo.next }}</span>
+          </span>
         </div>
         <div class="flex items-center justify-between text-xs">
           <span class="text-gray-500 dark:text-gray-400">{{ t('subscriptions.nodeCountLabel') }}</span>

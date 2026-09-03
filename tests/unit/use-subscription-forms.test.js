@@ -29,4 +29,16 @@ describe('useSubscriptionForms', () => {
 
     expect(editingSubscription.value.enableNodeCache).toBe(false);
   });
+
+  it('新增机场订阅默认跟随全局更新间隔', () => {
+    const { openAdd, editingSubscription } = useSubscriptionForms({
+      addSubscription: vi.fn(),
+      updateSubscription: vi.fn()
+    });
+
+    openAdd();
+
+    expect(editingSubscription.value.autoUpdateInterval).toBeNull();
+  });
+
 });

@@ -10,6 +10,7 @@ import { parseNodeList } from '../utils/node-parser.js';
 import { getProcessedUserAgent } from '../../utils/format-utils.js';
 import { buildFetchProxyUrl } from '../../utils/fetch-proxy-utils.js';
 import { isSuspiciousNodeCountDrop } from '../../services/node-cache-service.js';
+import { buildSubscriptionFailureEmail, sendEmailNotification } from '../../services/email-notification-service.js';
 
 // 创建用于全局匹配的协议正则表达式
 const NODE_PROTOCOL_GLOBAL_REGEX = new RegExp('^(ss|ssr|vmess|vless|trojan|hysteria2?|hy|hy2|tuic|anytls|socks5|socks):\\/\\/', 'gm');
@@ -24,6 +25,21 @@ const SUBSCRIPTION_BODY_ERROR_PATTERNS = [
     /\bstatus\s*[:=]?\s*(400|401|403|404|429|5\d\d)\b/i,
     /\bhttp\s*(400|401|403|404|429|5\d\d)\b/i
 ];
+
+async function notifySubscriptionUpdateFailure(env, name, url, error, errorType) {
+    try {
+        const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
+        const settings = await storageAdapter.get(KV_KEY_SETTINGS) || DEFAULT_SETTINGS;
+        await sendEmailNotification(settings.emailNotification, buildSubscriptionFailureEmail({
+            name,
+            url,
+            error,
+            errorType
+        }));
+    } catch (notificationError) {
+        console.warn('[Node Count] Failure email notification failed:', notificationError);
+    }
+}
 
 function parseBooleanEnvFlag(value) {
     if (value === undefined || value === null) return null;
@@ -99,7 +115,7 @@ export async function handleNodeCountRequest(request, env) {
     }
 
     try {
-        const { url: subUrl, fetchProxy, plusAsSpace, userAgent: customUserAgent } = await readJsonWithLimit(request, JSON_BODY_LIMITS.normal);
+        const { url: subUrl, name: subscriptionName, fetchProxy, plusAsSpace, userAgent: customUserAgent } = await readJsonWithLimit(request, JSON_BODY_LIMITS.normal);
         if (!subUrl || typeof subUrl !== 'string' || !/^https?:\/\//i.test(subUrl)) {
             return createErrorResponse('Invalid or missing url', 400);
         }
@@ -381,6 +397,7 @@ export async function handleNodeCountRequest(request, env) {
                 console.error(
                     `[Node Count] Node count update failed proxyUsed=${Boolean(effectiveFetchProxy)} requestUrl=${requestUrl}: ${errorMessage}`
                 );
+                void notifySubscriptionUpdateFailure(env, subscriptionName || subUrl, subUrl, errorMessage, errorType);
                 return createJsonResponse({
                     success: false,
                     error: errorMessage,
@@ -391,10 +408,12 @@ export async function handleNodeCountRequest(request, env) {
                 });
             }
 
-            // 只有在至少获取到一个有效信息时，才更新数据库
-            if (result.count > 0) {
+            // 请求成功且至少获取到节点或订阅信息时才更新数据库；避免解析暂时为 0 时丢失流量/到期数据。
+            if (result.count > 0 || result.userInfo) {
                 const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
-                const originalSubs = await storageAdapter.get('misub_subscriptions_v1') || [];
+                const originalSubs = typeof storageAdapter.getAllSubscriptions === 'function'
+                    ? await storageAdapter.getAllSubscriptions()
+                    : await storageAdapter.get('misub_subscriptions_v1') || [];
                 const subToUpdate = originalSubs.find(s => s.url === subUrl);
 
                 if (subToUpdate) {
@@ -402,6 +421,11 @@ export async function handleNodeCountRequest(request, env) {
                         Number(subToUpdate.lastGoodNodeCount) || 0,
                         Number(subToUpdate.nodeCount) || 0
                     );
+
+                    if (result.count === 0 && knownNodeCount > 0) {
+                        result.count = knownNodeCount;
+                        result.protected = true;
+                    }
 
                     // This endpoint is also called automatically while loading a subscription
                     // group. A truncated Base64 prefix may still parse as one node, so preserve
@@ -422,7 +446,7 @@ export async function handleNodeCountRequest(request, env) {
                             ...current,
                             nodeCount: result.count,
                             ...(result.count >= 10 ? { lastGoodNodeCount: result.count } : {}),
-                            userInfo: result.userInfo,
+                            userInfo: result.userInfo || current.userInfo || null,
                             lastError: null,
                             lastUpdate: new Date().toISOString()
                         }));
@@ -432,7 +456,7 @@ export async function handleNodeCountRequest(request, env) {
                         if (target) {
                             target.nodeCount = result.count;
                             if (result.count >= 10) target.lastGoodNodeCount = result.count;
-                            target.userInfo = result.userInfo;
+                            target.userInfo = result.userInfo || target.userInfo || null;
                             target.lastError = null;
                             target.lastUpdate = new Date().toISOString();
                             await storageAdapter.put('misub_subscriptions_v1', allSubs);
@@ -580,6 +604,22 @@ export async function handleBatchUpdateNodesRequest(request, env) {
 
         // 等待所有更新完成
         const results = await Promise.all(updatePromises);
+
+        const successfulResults = results.filter(result => result.success);
+        if (successfulResults.length > 0) {
+            const updatedAt = new Date().toISOString();
+            await Promise.all(successfulResults.map(result =>
+                typeof storageAdapter.updateSubscriptionById === 'function'
+                    ? storageAdapter.updateSubscriptionById(result.subscriptionId, current => ({
+                        ...current,
+                        nodeCount: result.nodeCount,
+                        ...(result.nodeCount >= 10 ? { lastGoodNodeCount: result.nodeCount } : {}),
+                        lastError: null,
+                        lastUpdate: updatedAt
+                    }))
+                    : null
+            ));
+        }
 
         // 统计结果
         const successfulUpdates = results.filter(r => r.success);

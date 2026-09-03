@@ -20,14 +20,18 @@ const props = defineProps({
   searchable: { type: Boolean, default: false },
   searchQuery: { type: String, default: '' },
   filteredCount: { type: Number, default: undefined },
+  globalUpdateInterval: { type: Number, default: 0 },
+  filters: { type: Object, default: () => ({ status: 'all', proxy: 'all', update: 'all', expiry: 'all', sort: 'default' }) },
 });
 
-const emit = defineEmits(['add', 'delete', 'changePage', 'updateNodeCount', 'edit', 'toggleSort', 'markDirty', 'preview', 'deleteAll', 'refreshAll', 'reorder', 'import', 'qrcode', 'updateSearch']);
+const emit = defineEmits(['add', 'delete', 'changePage', 'updateNodeCount', 'edit', 'toggleSort', 'markDirty', 'preview', 'deleteAll', 'refreshAll', 'reorder', 'import', 'qrcode', 'updateSearch', 'updateFilters']);
 
 const searchModel = computed({
   get: () => props.searchQuery,
   set: value => emit('updateSearch', value)
 });
+
+const updateFilter = (key, value) => emit('updateFilters', { ...props.filters, [key]: value });
 
 const visibleCount = computed(() => props.filteredCount ?? props.subscriptions.length);
 
@@ -97,6 +101,38 @@ const handleImport = () => emit('import');
           {{ visibleCount }}/{{ subscriptions.length }}
         </span>
       </div>
+      <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <select :value="filters.status" data-testid="subscription-filter-status" @change="updateFilter('status', $event.target.value)" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:[color-scheme:dark]">
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="all">{{ t('subscriptions.filterStatusAll') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="enabled">{{ t('subscriptions.filterEnabled') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="disabled">{{ t('subscriptions.filterDisabled') }}</option>
+        </select>
+        <select :value="filters.proxy" data-testid="subscription-filter-proxy" @change="updateFilter('proxy', $event.target.value)" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:[color-scheme:dark]">
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="all">{{ t('subscriptions.filterProxyAll') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="enabled">{{ t('subscriptions.filterProxyEnabled') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="disabled">{{ t('subscriptions.filterProxyDisabled') }}</option>
+        </select>
+        <select :value="filters.update" data-testid="subscription-filter-update" @change="updateFilter('update', $event.target.value)" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:[color-scheme:dark]">
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="all">{{ t('subscriptions.filterUpdateAll') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="follow">{{ t('subscriptions.autoUpdateFollowGlobal') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="custom">{{ t('subscriptions.filterUpdateCustom') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="manual">{{ t('subscriptions.autoUpdateDisabled') }}</option>
+        </select>
+        <select :value="filters.expiry" data-testid="subscription-filter-expiry" @change="updateFilter('expiry', $event.target.value)" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:[color-scheme:dark]">
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="all">{{ t('subscriptions.filterExpiryAll') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="soon">{{ t('subscriptions.filterExpirySoon') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="expired">{{ t('subscriptions.filterExpired') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="active">{{ t('subscriptions.filterExpiryActive') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="unknown">{{ t('subscriptions.filterExpiryUnknown') }}</option>
+        </select>
+        <select :value="filters.sort" data-testid="subscription-filter-sort" @change="updateFilter('sort', $event.target.value)" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:[color-scheme:dark]">
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="default">{{ t('subscriptions.filterSortDefault') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="updated-desc">{{ t('subscriptions.filterSortUpdatedDesc') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="updated-asc">{{ t('subscriptions.filterSortUpdatedAsc') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="expiry-asc">{{ t('subscriptions.filterSortExpiry') }}</option>
+          <option class="bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200" value="name-asc">{{ t('subscriptions.filterSortName') }}</option>
+        </select>
+      </div>
     </div>
     <div v-if="subscriptions.length > 0">
       <draggable 
@@ -111,6 +147,7 @@ const handleImport = () => emit('import');
           <div class="cursor-move">
               <Card
                   :misub="subscription"
+                  :global-update-interval="globalUpdateInterval"
                   @delete="handleDelete(subscription.id)"
                   @change="handleSortEnd"
                   @update="handleUpdate(subscription.id)"
@@ -129,6 +166,7 @@ const handleImport = () => emit('import');
           >   
               <Card
                   :misub="subscription"
+                  :global-update-interval="globalUpdateInterval"
                   @delete="handleDelete(subscription.id)"
                   @change="handleSortEnd"
                   @update="handleUpdate(subscription.id)"

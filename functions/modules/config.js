@@ -144,6 +144,16 @@ export const DEFAULT_SETTINGS = {
             }
         ]
     },
+    emailNotification: {
+        enabled: false,
+        smtpHost: '',
+        smtpPort: 465,
+        smtpSecure: true,
+        smtpUser: '',
+        smtpPassword: '',
+        from: '',
+        to: ''
+    },
     // 订阅转换设置
     subconverter: {
         engineMode: "builtin",

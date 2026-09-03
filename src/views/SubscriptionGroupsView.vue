@@ -1,5 +1,5 @@
 <script setup>
-import { ref, defineAsyncComponent, computed } from 'vue';
+import { ref, defineAsyncComponent, computed, onMounted, onUnmounted } from 'vue';
 import { extractNodeName } from '../lib/utils.js';
 import { useDataStore } from '../stores/useDataStore.js';
 import { useSubscriptions } from '../composables/useSubscriptions.js';
@@ -12,8 +12,10 @@ import Modal from '../components/forms/Modal.vue';
 import SubscriptionEditModal from '../components/modals/SubscriptionEditModal.vue';
 import { useToastStore } from '../stores/toast.js';
 import { useI18n } from '../i18n/index.js';
+import { storeToRefs } from 'pinia';
 
 const dataStore = useDataStore();
+const { settings } = storeToRefs(dataStore);
 const { showToast } = useToastStore();
 const { markDirty } = dataStore;
 const { t } = useI18n();
@@ -24,9 +26,9 @@ const isSortingSubs = ref(false);
 const showDeleteSubsModal = ref(false);
 
 const {
-  subscriptions, filteredSubscriptions, searchQuery: subscriptionSearchQuery, subsCurrentPage, subsTotalPages, paginatedSubscriptions,
+  subscriptions, filteredSubscriptions, searchQuery: subscriptionSearchQuery, subsCurrentPage, subsTotalPages, paginatedSubscriptions, subscriptionFilters,
   changeSubsPage, addSubscription, updateSubscription, deleteSubscription, deleteAllSubscriptions,
-  addSubscriptionsFromBulk, handleUpdateNodeCount, batchUpdateAllSubscriptions,
+  addSubscriptionsFromBulk, handleUpdateNodeCount, batchUpdateAllSubscriptions, startAutoUpdate, stopAutoUpdate,
   reorderSubscriptions
 } = useSubscriptions(markDirty);
 
@@ -42,7 +44,11 @@ const {
   openAdd: handleAddSubscription,
   openEdit: handleEditSubscription,
   handleSave: handleSaveSubscription
-} = useSubscriptionForms({ addSubscription, updateSubscription });
+} = useSubscriptionForms({
+  addSubscription,
+  updateSubscription,
+  saveSubscription: dataStore.saveSubscription
+});
 
 const {
   showModal: showBulkImportModal,
@@ -98,6 +104,14 @@ const handleQRCode = (id) => {
     showQRCodeModal.value = true;
   }
 };
+
+onMounted(() => {
+  startAutoUpdate();
+});
+
+onUnmounted(() => {
+  stopAutoUpdate();
+});
 </script>
 
 <template>
@@ -106,6 +120,8 @@ const handleQRCode = (id) => {
 
     <SubscriptionPanel
       :subscriptions="subscriptions"
+      :global-update-interval="Number(settings?.autoUpdateInterval) || 0"
+      :filters="subscriptionFilters" @update-filters="subscriptionFilters = $event"
       :paginated-subscriptions="paginatedSubscriptions"
       :search-query="subscriptionSearchQuery"
       :filtered-count="filteredSubscriptions.length"

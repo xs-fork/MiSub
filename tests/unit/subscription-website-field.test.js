@@ -100,4 +100,78 @@ describe('subscription official website field', () => {
     expect(websiteLink.element.compareDocumentPosition(notes.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(meta.text()).toMatch(/^官网\s*30\/月 IPLC专线/);
   });
+
+  it('can hide the subscription URL without changing the copied value', async () => {
+    const url = 'https://api.example.com/sub?token=private-token';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    });
+
+    const wrapper = mount(Card, {
+      props: {
+        misub: { id: 'sub_1', name: '测试机场', url, enabled: true, nodeCount: 0 }
+      },
+      global: withZhI18n({
+        Switch: { template: '<button class="switch-stub"></button>' }
+      })
+    });
+
+    const urlInput = wrapper.get('input[readonly]');
+    const visibilityButton = wrapper.get('button[aria-label="显示订阅地址"]');
+    expect(urlInput.element.value).not.toContain('private-token');
+    expect(urlInput.element.value).toMatch(/^\*+$/);
+
+    await visibilityButton.trigger('click');
+    expect(urlInput.element.value).toBe(url);
+
+    await wrapper.get('button[aria-label="复制"]').trigger('click');
+    expect(writeText).toHaveBeenCalledWith(url);
+  });
+
+  it('shows the source-specific auto-update strategy on the subscription card', () => {
+    const wrapper = mount(Card, {
+      props: {
+        globalUpdateInterval: 5,
+        misub: {
+          id: 'sub_1',
+          name: '测试机场',
+          url: 'https://api.example.com/sub',
+          autoUpdateInterval: 30,
+          enabled: true,
+          nodeCount: 0
+        }
+      },
+      global: withZhI18n({
+        Switch: { template: '<button class="switch-stub"></button>' }
+      })
+    });
+
+    expect(wrapper.text()).toContain('自动更新策略');
+    expect(wrapper.text()).toContain('机场独立（30 分钟）');
+  });
+
+  it('uses graduated colors for subscription expiry warnings', () => {
+    const createWrapper = (daysRemaining) => mount(Card, {
+      props: {
+        misub: {
+          id: 'sub_1',
+          name: '即将到期机场',
+          url: 'https://api.example.com/sub',
+          enabled: true,
+          nodeCount: 0,
+          userInfo: { upload: 0, download: 0, total: 100, expire: Math.floor(Date.now() / 1000) + daysRemaining * 24 * 60 * 60 }
+        }
+      },
+      global: withZhI18n({
+        Switch: { template: '<button class="switch-stub"></button>' }
+      })
+    });
+
+    expect(createWrapper(30).get('[data-testid="subscription-expiry-badge"]').classes()).toContain('text-amber-600');
+    expect(createWrapper(15).get('[data-testid="subscription-expiry-badge"]').classes()).toContain('text-orange-600');
+    expect(createWrapper(7).get('[data-testid="subscription-expiry-badge"]').classes()).toContain('text-red-600');
+    expect(createWrapper(-1).get('[data-testid="subscription-expiry-badge"]').classes()).toContain('text-red-700');
+  });
 });

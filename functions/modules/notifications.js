@@ -12,6 +12,7 @@ import {
     sendEnhancedTgNotification as sendCoreEnhancedTg, 
     tgEscape as coreTgEscape 
 } from '../services/notification-service.js';
+import { buildSubscriptionAlertEmail, sendEmailNotification } from '../services/email-notification-service.js';
 
 /**
  * 转义 Telegram HTML 特殊字符
@@ -83,6 +84,14 @@ export async function checkAndNotify(sub, settings, env) {
                     sub.lastNotifiedExpire = now;
                 }
             }
+            if (!sub.lastNotifiedExpireEmail || (now - sub.lastNotifiedExpireEmail > ONE_DAY_MS)) {
+                const emailSent = await sendEmailNotification(settings.emailNotification, buildSubscriptionAlertEmail({
+                    type: 'expiry', name: sub.name, url: sub.url,
+                    status: daysRemaining < 0 ? '已过期' : `仅剩 ${daysRemaining} 天到期`,
+                    detail: `到期日期: ${expiryDate.toLocaleDateString('zh-CN')}`
+                }));
+                if (emailSent.sent) sub.lastNotifiedExpireEmail = now;
+            }
         }
     }
 
@@ -104,6 +113,14 @@ export async function checkAndNotify(sub, settings, env) {
                 if (sent) {
                     sub.lastNotifiedTraffic = now;
                 }
+            }
+            if (!sub.lastNotifiedTrafficEmail || (now - sub.lastNotifiedTrafficEmail > ONE_DAY_MS)) {
+                const emailSent = await sendEmailNotification(settings.emailNotification, buildSubscriptionAlertEmail({
+                    type: 'traffic', name: sub.name, url: sub.url,
+                    status: `已使用 ${usagePercent}%`,
+                    detail: `${formatBytes(used)} / ${formatBytes(total)}`
+                }));
+                if (emailSent.sent) sub.lastNotifiedTrafficEmail = now;
             }
         }
     }

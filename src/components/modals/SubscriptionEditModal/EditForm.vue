@@ -24,7 +24,11 @@ const isTestingProxy = ref(false);
 // 当弹窗传入新订阅信息时，初始化开关状态
 watch(() => props.editingSubscription, (newSub) => {
   if (newSub) {
-    newSub.autoUpdateInterval = Number(newSub.autoUpdateInterval) || 0;
+    if (newSub.autoUpdateInterval !== null && newSub.autoUpdateInterval !== undefined) {
+      newSub.autoUpdateInterval = Number(newSub.autoUpdateInterval) || 0;
+    } else {
+      newSub.autoUpdateInterval = null;
+    }
     useFetchProxy.value = !!newSub.fetchProxy;
   }
 }, { immediate: true });
@@ -99,17 +103,18 @@ const testProxyConnectivity = async () => {
     <select
       id="sub-edit-auto-update"
       v-model.number="editingSubscription.autoUpdateInterval"
-      class="mt-2 w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-white/10 dark:bg-white/[0.035] dark:text-[#f7f8f8]"
+      class="mt-2 w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-white/10 dark:bg-white/[0.035] dark:text-[#f7f8f8] dark:[color-scheme:dark]"
     >
-      <option :value="0">{{ t('subscriptions.autoUpdateDisabled') }}</option>
-      <option :value="15">15 {{ t('subscriptions.minutes') }}</option>
-      <option :value="30">30 {{ t('subscriptions.minutes') }}</option>
-      <option :value="60">1 {{ t('subscriptions.hours') }}</option>
-      <option :value="360">6 {{ t('subscriptions.hours') }}</option>
-      <option :value="720">12 {{ t('subscriptions.hours') }}</option>
-      <option :value="1440">1 {{ t('subscriptions.days') }}</option>
-      <option :value="4320">3 {{ t('subscriptions.days') }}</option>
-      <option :value="10080">7 {{ t('subscriptions.days') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="null">{{ t('subscriptions.autoUpdateFollowGlobal') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="0">{{ t('subscriptions.autoUpdateDisabled') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="15">15 {{ t('subscriptions.minutes') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="30">30 {{ t('subscriptions.minutes') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="60">1 {{ t('subscriptions.hours') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="360">6 {{ t('subscriptions.hours') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="720">12 {{ t('subscriptions.hours') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="1440">1 {{ t('subscriptions.days') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="4320">3 {{ t('subscriptions.days') }}</option>
+      <option class="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100" :value="10080">7 {{ t('subscriptions.days') }}</option>
     </select>
     <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('subscriptions.autoUpdateIntervalHint') }}</p>
   </div>
