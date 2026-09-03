@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useDataStore } from '../stores/useDataStore';
 import { useToastStore } from '../stores/toast.js';
-import { fetchNodeCount, batchUpdateNodes } from '../lib/api.js';
+import { fetchNodeCount } from '../lib/api.js';
 import { handleError } from '../utils/errorHandler.js';
 import { TIMING } from '../constants/timing.js';
 import { t } from '../i18n/index.js';
@@ -186,7 +186,7 @@ export function useSubscriptions(markDirty) {
                             void dataStore.saveData();
                         }
                     }
-                    return; // 开启保护性缓存节点时，失败保留旧值
+                    return false; // 开启保护性缓存节点时，失败保留旧值
                 }
 
                 // 成功获取数据
@@ -202,6 +202,7 @@ export function useSubscriptions(markDirty) {
                     // 自动保存手动更新的结果
                     void dataStore.saveData();
                 }
+                  return true;
     } catch (error) {
       // 清除超时保护
       clearTimeout(timeoutId);
@@ -216,6 +217,7 @@ export function useSubscriptions(markDirty) {
       if (!isInitialLoad) {
         showToast(errorMessage, 'error');
       }
+      return false;
     } finally {
       if (subToUpdate) subToUpdate.isUpdating = false;
     }
@@ -306,7 +308,7 @@ export function useSubscriptions(markDirty) {
 
   async function batchUpdateAllSubscriptions() {
     const subsToUpdate = subscriptions.value.filter(sub =>
-      sub.enabled && sub.url && sub.url.startsWith('http') && !sub.isUpdating
+      sub.enabled !== false && sub.url && sub.url.startsWith('http') && !sub.isUpdating
     );
 
     if (subsToUpdate.length === 0) {
@@ -314,57 +316,16 @@ export function useSubscriptions(markDirty) {
       return;
     }
 
-    subsToUpdate.forEach(sub => { sub.isUpdating = true; });
     showToast(t('subscriptions.refreshing', { count: subsToUpdate.length }), 'info');
 
     try {
-      const result = await batchUpdateNodes(subsToUpdate.map(sub => sub.id));
-
-      if (result && result.success) {
-        let successCount = 0;
-        const resultList = Array.isArray(result.results) ? result.results : [];
-
-        resultList.forEach(updateResult => {
-          const id = updateResult.subscriptionId || updateResult.id;
-          const sub = subscriptions.value.find(s => s.id === id);
-          if (!sub) return;
-
-          if (updateResult.success) {
-            sub.nodeCount = updateResult.nodeCount || 0;
-            successCount++;
-          }
-        });
-
-        for (const sub of subsToUpdate) {
-          try {
-            const result = await fetchNodeCount(sub.url);
-            if (result.success && result.data.userInfo) {
-              sub.userInfo = result.data.userInfo;
-            }
-          } catch (error) {
-            if (isDev) {
-              console.debug('[Subscriptions] Failed to fetch node info during batch update:', error);
-            }
-          }
-        }
-
-        const failedCount = subsToUpdate.length - successCount;
-        showToast(t('subscriptions.refreshDone', { success: successCount, total: subsToUpdate.length, failed: failedCount }), 'success');
-        markDirty();
-      } else {
-        showToast(t('subscriptions.refreshFailed', { message: result?.message || t('subscriptions.unknownError') }), 'error');
-        for (const sub of subsToUpdate) {
-          await handleUpdateNodeCount(sub.id);
-        }
-      }
+      const results = await Promise.allSettled(subsToUpdate.map(sub => handleUpdateNodeCount(sub.id)));
+      const successCount = results.filter(result => result.status === 'fulfilled' && result.value === true).length;
+      const failedCount = subsToUpdate.length - successCount;
+      showToast(t('subscriptions.refreshDone', { success: successCount, total: subsToUpdate.length, failed: failedCount }), failedCount ? 'warning' : 'success');
     } catch (error) {
       handleError(error, 'Batch Subscription Update Error', { subscriptionCount: subsToUpdate.length });
       showToast(t('subscriptions.refreshFallback'), 'error');
-      for (const sub of subsToUpdate) {
-        await handleUpdateNodeCount(sub.id);
-      }
-    } finally {
-      subsToUpdate.forEach(sub => { sub.isUpdating = false; });
     }
   }
 
