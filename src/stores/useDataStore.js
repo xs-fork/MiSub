@@ -242,6 +242,29 @@ export const useDataStore = defineStore('data', () => {
         return result;
     }
 
+    async function persistSubscriptionRuntimeInfo(subscriptionIds = []) {
+        const idSet = new Set(subscriptionIds);
+        const updates = subscriptions.value
+            .filter(subscription => idSet.has(subscription.id))
+            .map(subscription => {
+                const { isUpdating, ...persistedSubscription } = subscription;
+                return persistedSubscription;
+            });
+        if (updates.length === 0) return null;
+
+        const result = await api.post('/api/misubs', {
+            diff: {
+                subscriptions: { added: [], updated: updates, removed: [] }
+            }
+        });
+        if (!result.success) throw new Error(result.message || t('store.saveFailed'));
+        if (Array.isArray(result.data?.misubs)) {
+            subscriptions.value = result.data.misubs.map(subscription => ({ ...subscription, isUpdating: false }));
+        }
+        lastUpdated.value = new Date();
+        return result;
+    }
+
     async function saveProfile(profile, { isNew = false } = {}) {
         const item = JSON.parse(JSON.stringify(profile));
         const result = await api.post('/api/misubs', {
@@ -539,6 +562,7 @@ export const useDataStore = defineStore('data', () => {
         fetchData,
         saveData,
         saveSubscription,
+        persistSubscriptionRuntimeInfo,
         saveProfile,
         saveSettings,
         fetchRuleTemplates,

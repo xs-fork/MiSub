@@ -115,7 +115,7 @@ export async function handleNodeCountRequest(request, env) {
     }
 
     try {
-        const { url: subUrl, name: subscriptionName, fetchProxy, plusAsSpace, userAgent: customUserAgent } = await readJsonWithLimit(request, JSON_BODY_LIMITS.normal);
+        const { url: subUrl, name: subscriptionName, fetchProxy, plusAsSpace, userAgent: customUserAgent, deferPersist = false } = await readJsonWithLimit(request, JSON_BODY_LIMITS.normal);
         if (!subUrl || typeof subUrl !== 'string' || !/^https?:\/\//i.test(subUrl)) {
             return createErrorResponse('Invalid or missing url', 400);
         }
@@ -432,7 +432,9 @@ export async function handleNodeCountRequest(request, env) {
                         });
                     }
 
-                    if (typeof storageAdapter.updateSubscriptionById === 'function') {
+                    if (deferPersist) {
+                        console.debug(`[Node Count] Deferring persistence for batch refresh: ${subUrl}`);
+                    } else if (typeof storageAdapter.updateSubscriptionById === 'function') {
                         await storageAdapter.updateSubscriptionById(subToUpdate.id, current => ({
                             ...current,
                             nodeCount: result.count,

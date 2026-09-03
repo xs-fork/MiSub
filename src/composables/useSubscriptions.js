@@ -114,7 +114,7 @@ export function useSubscriptions(markDirty) {
     subsCurrentPage.value = page;
   }
 
-  async function handleUpdateNodeCount(subId, isInitialLoad = false) {
+  async function handleUpdateNodeCount(subId, isInitialLoad = false, deferSave = false) {
     // Find in the filtered list
     const subToUpdate = subscriptions.value.find(s => s.id === subId);
     if (!subToUpdate) return;
@@ -142,7 +142,8 @@ export function useSubscriptions(markDirty) {
         subToUpdate.fetchProxy,
         Boolean(subToUpdate.plusAsSpace),
         subToUpdate.customUserAgent,
-        subToUpdate.name
+        subToUpdate.name,
+        deferSave
       );
 
       // 清除超时保护
@@ -181,7 +182,7 @@ export function useSubscriptions(markDirty) {
                     if (subToUpdate.enableNodeCache !== true) {
                         subToUpdate.nodeCount = 0;
                         subToUpdate.userInfo = null;
-                        if (!isInitialLoad) {
+                        if (!isInitialLoad && !deferSave) {
                             markDirty();
                             void dataStore.saveData();
                         }
@@ -196,7 +197,7 @@ export function useSubscriptions(markDirty) {
                 subToUpdate.lastError = null; // 成功后清除错误状态
                 subToUpdate.lastUpdate = new Date().toISOString();
 
-                if (!isInitialLoad) {
+                if (!isInitialLoad && !deferSave) {
                     showToast(t('subscriptions.updateSuccess', { name: subToUpdate.name || t('subscriptions.fallbackName') }), 'success');
                     markDirty();
                     // 自动保存手动更新的结果
@@ -323,11 +324,12 @@ export function useSubscriptions(markDirty) {
       const concurrency = 3;
       for (let index = 0; index < subsToUpdate.length; index += concurrency) {
         const batch = subsToUpdate.slice(index, index + concurrency);
-        const batchResults = await Promise.allSettled(batch.map(sub => handleUpdateNodeCount(sub.id)));
+        const batchResults = await Promise.allSettled(batch.map(sub => handleUpdateNodeCount(sub.id, false, true)));
         results.push(...batchResults);
       }
       const successCount = results.filter(result => result.status === 'fulfilled' && result.value === true).length;
       const failedCount = subsToUpdate.length - successCount;
+      await dataStore.persistSubscriptionRuntimeInfo(subsToUpdate.map(sub => sub.id));
       showToast(t('subscriptions.refreshDone', { success: successCount, total: subsToUpdate.length, failed: failedCount }), failedCount ? 'warning' : 'success');
     } catch (error) {
       handleError(error, 'Batch Subscription Update Error', { subscriptionCount: subsToUpdate.length });
