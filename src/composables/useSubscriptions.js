@@ -194,7 +194,9 @@ export function useSubscriptions(markDirty) {
                 const data = result.data.data || result.data; // 兼容后端返回结构
                 subToUpdate.nodeCount = data.count || 0;
                 // 节点响应可能成功但未携带 subscription-userinfo；保留已知流量，避免批量持久化时用空值覆盖。
-                subToUpdate.userInfo = data.userInfo || subToUpdate.userInfo || null;
+                subToUpdate.userInfo = data.userInfo
+                  ? { ...(subToUpdate.userInfo || {}), ...data.userInfo }
+                  : subToUpdate.userInfo || null;
                 subToUpdate.lastError = null; // 成功后清除错误状态
                 subToUpdate.lastUpdate = new Date().toISOString();
 

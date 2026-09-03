@@ -161,6 +161,10 @@ export async function handleNodeCountRequest(request, env) {
                 return null;
             };
 
+            const hasCompleteTrafficInfo = (info) => ['upload', 'download', 'total']
+                .every(key => Number.isFinite(Number(info?.[key])));
+            const mergeUserInfo = (existing, incoming) => ({ ...(existing || {}), ...(incoming || {}) });
+
             // 辅助函数：从响应体伪节点名称中解析流量和到期信息
             // 许多机场会在节点列表中嵌入 "剩余流量：985.4 GB" / "套餐到期：2025-12-31" 等伪节点
             const extractUserInfoFromBody = (decodedText) => {
@@ -241,11 +245,11 @@ export async function handleNodeCountRequest(request, env) {
                 // 使用与预览功能相同的节点解析逻辑
                 try {
                     // [回退1] 如果之前的流量请求失败或没拿到数据，尝试从节点请求的响应头中提取
-                    if (!result.userInfo) {
+                    if (!hasCompleteTrafficInfo(result.userInfo)) {
                         const info = extractUserInfo(nodeCountResponse);
                         if (info) {
                             console.info('[NodeHandler] Successfully extracted traffic info from node response header (Fallback 1).');
-                            result.userInfo = info;
+                            result.userInfo = mergeUserInfo(result.userInfo, info);
                             trafficRequestSucceeded = true;
                         }
                     }
@@ -262,7 +266,7 @@ export async function handleNodeCountRequest(request, env) {
 
                     // [回退2] 如果响应头中也没有流量信息，尝试从 body 伪节点中解析
                     // 这在使用 FetchProxy（如 Vercel）时非常重要，因为代理会丢弃上游响应头
-                    if (!result.userInfo) {
+                    if (!hasCompleteTrafficInfo(result.userInfo)) {
                         // 需要先解码 base64（如果是 base64 编码的话）
                         let decodedText = text;
                         try {
@@ -283,7 +287,7 @@ export async function handleNodeCountRequest(request, env) {
                         const bodyInfo = extractUserInfoFromBody(decodedText);
                         if (bodyInfo) {
                             console.info('[NodeHandler] Successfully extracted traffic info from body fake nodes (Fallback 2).');
-                            result.userInfo = bodyInfo;
+                            result.userInfo = mergeUserInfo(result.userInfo, bodyInfo);
                             trafficRequestSucceeded = true;
                         }
                     }
@@ -346,7 +350,7 @@ export async function handleNodeCountRequest(request, env) {
             }
 
             // 只有首个响应未携带流量信息时，才以兼容 UA 串行补偿一次。
-            if (nodeCountRequestSucceeded && !result.userInfo) {
+            if (nodeCountRequestSucceeded && !hasCompleteTrafficInfo(result.userInfo)) {
                 try {
                     const trafficResponse = await fetch(new Request(requestUrl, {
                         headers: { 'User-Agent': 'clash-verge/v2.4.3' },
@@ -355,7 +359,7 @@ export async function handleNodeCountRequest(request, env) {
                     if (trafficResponse.ok) {
                         const info = extractUserInfo(trafficResponse);
                         if (info) {
-                            result.userInfo = info;
+                            result.userInfo = mergeUserInfo(result.userInfo, info);
                             trafficRequestSucceeded = true;
                         }
                     }
@@ -439,7 +443,7 @@ export async function handleNodeCountRequest(request, env) {
                             ...current,
                             nodeCount: result.count,
                             ...(result.count >= 10 ? { lastGoodNodeCount: result.count } : {}),
-                            userInfo: result.userInfo || current.userInfo || null,
+                            userInfo: result.userInfo ? mergeUserInfo(current.userInfo, result.userInfo) : current.userInfo || null,
                             lastError: null,
                             lastUpdate: new Date().toISOString()
                         }));
@@ -449,7 +453,7 @@ export async function handleNodeCountRequest(request, env) {
                         if (target) {
                             target.nodeCount = result.count;
                             if (result.count >= 10) target.lastGoodNodeCount = result.count;
-                            target.userInfo = result.userInfo || target.userInfo || null;
+                            target.userInfo = result.userInfo ? mergeUserInfo(target.userInfo, result.userInfo) : target.userInfo || null;
                             target.lastError = null;
                             target.lastUpdate = new Date().toISOString();
                             await storageAdapter.put('misub_subscriptions_v1', allSubs);

@@ -120,7 +120,7 @@ describe('useSubscriptions manual node refresh failures', () => {
     }
   });
 
-  it('keeps existing traffic when a successful node refresh has no traffic header', async () => {
+  it('keeps existing usage when a successful node refresh has incomplete traffic data', async () => {
     const oldUserInfo = { upload: 10, download: 20, total: 100, expire: 999 };
     mocks.subscriptionsRef.value = [{
       id: 'sub-1',
@@ -132,7 +132,7 @@ describe('useSubscriptions manual node refresh failures', () => {
     }];
     mocks.fetchNodeCount.mockResolvedValue({
       success: true,
-      data: { count: 90, userInfo: null }
+      data: { count: 90, userInfo: { total: 200, expire: 1000 } }
     });
 
     const { useSubscriptions } = await import('../../src/composables/useSubscriptions.js');
@@ -141,6 +141,6 @@ describe('useSubscriptions manual node refresh failures', () => {
     await handleUpdateNodeCount('sub-1', false, true);
 
     expect(mocks.subscriptionsRef.value[0].nodeCount).toBe(90);
-    expect(mocks.subscriptionsRef.value[0].userInfo).toBe(oldUserInfo);
+    expect(mocks.subscriptionsRef.value[0].userInfo).toEqual({ upload: 10, download: 20, total: 200, expire: 1000 });
   });
 });
