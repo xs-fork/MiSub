@@ -185,4 +185,19 @@ describe('subscription official website field', () => {
     expect(mountCard({ userInfo: { total: 100, upload: 50, download: 50 } }).get('[data-testid="subscription-health-badge"]').text()).toBe('流量已耗尽');
     expect(mountCard({ lastUpdate: '2026-09-03T00:00:00.000Z', nodeCount: 0 }).get('[data-testid="subscription-health-badge"]').text()).toBe('节点为 0');
   });
+
+  it('shows body-derived traffic as remaining instead of zero usage and a false total', () => {
+    const wrapper = mount(Card, {
+      props: {
+        misub: {
+          id: 'sub_1', name: '测试机场', url: 'https://api.example.com/sub', enabled: true, nodeCount: 1,
+          userInfo: { remaining: 879 * 1024 * 1024 * 1024 }
+        }
+      },
+      global: withZhI18n({ Switch: { template: '<button class="switch-stub"></button>' } })
+    });
+
+    expect(wrapper.text()).toContain('剩余');
+    expect(wrapper.text()).not.toContain('已用 0');
+  });
 });

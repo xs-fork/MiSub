@@ -82,14 +82,19 @@ export function useSubscriptions(markDirty) {
       if (sub.excludeTraffic) return acc;
       if (
         sub.enabled !== false &&
-        sub.userInfo &&
-        Number(sub.userInfo.total) > 0 &&
-        Number(sub.userInfo.total) < REASONABLE_TRAFFIC_LIMIT_BYTES
+        sub.userInfo
       ) {
         const total = Number(sub.userInfo.total);
-        const used = Number(sub.userInfo.upload || 0) + Number(sub.userInfo.download || 0);
-        const remaining = total - used;
-        return acc + Math.max(0, remaining);
+        const upload = Number(sub.userInfo.upload);
+        const download = Number(sub.userInfo.download);
+        if (total > 0 && total < REASONABLE_TRAFFIC_LIMIT_BYTES && Number.isFinite(upload) && Number.isFinite(download)) {
+          const used = upload + download;
+          return acc + Math.max(0, total - used);
+        }
+        const remaining = Number(sub.userInfo.remaining);
+        if (remaining >= 0 && remaining < REASONABLE_TRAFFIC_LIMIT_BYTES) {
+          return acc + remaining;
+        }
       }
       return acc;
     }, 0);
@@ -194,9 +199,18 @@ export function useSubscriptions(markDirty) {
                 const data = result.data.data || result.data; // 兼容后端返回结构
                 subToUpdate.nodeCount = data.count || 0;
                 // 节点响应可能成功但未携带 subscription-userinfo；保留已知流量，避免批量持久化时用空值覆盖。
-                subToUpdate.userInfo = data.userInfo
-                  ? { ...(subToUpdate.userInfo || {}), ...data.userInfo }
-                  : subToUpdate.userInfo || null;
+                if (data.userInfo) {
+                  const mergedUserInfo = { ...(subToUpdate.userInfo || {}), ...data.userInfo };
+                  if (data.userInfo.remaining !== undefined
+                    && Number(subToUpdate.userInfo?.total) === Number(data.userInfo.remaining)
+                    && Number(subToUpdate.userInfo?.upload || 0) === 0
+                    && Number(subToUpdate.userInfo?.download || 0) === 0) {
+                    delete mergedUserInfo.total;
+                    delete mergedUserInfo.upload;
+                    delete mergedUserInfo.download;
+                  }
+                  subToUpdate.userInfo = mergedUserInfo;
+                }
                 subToUpdate.lastError = null; // 成功后清除错误状态
                 subToUpdate.lastUpdate = new Date().toISOString();
 

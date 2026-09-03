@@ -163,7 +163,19 @@ export async function handleNodeCountRequest(request, env) {
 
             const hasCompleteTrafficInfo = (info) => ['upload', 'download', 'total']
                 .every(key => Number.isFinite(Number(info?.[key])));
-            const mergeUserInfo = (existing, incoming) => ({ ...(existing || {}), ...(incoming || {}) });
+            const mergeUserInfo = (existing, incoming) => {
+                const merged = { ...(existing || {}), ...(incoming || {}) };
+                // 兼容旧版本：曾将正文“剩余流量”错误写为 total=remaining、upload/download=0。
+                if (incoming?.remaining !== undefined
+                    && Number(existing?.total) === Number(incoming.remaining)
+                    && Number(existing?.upload || 0) === 0
+                    && Number(existing?.download || 0) === 0) {
+                    delete merged.total;
+                    delete merged.upload;
+                    delete merged.download;
+                }
+                return merged;
+            };
 
             // 辅助函数：从响应体伪节点名称中解析流量和到期信息
             // 许多机场会在节点列表中嵌入 "剩余流量：985.4 GB" / "套餐到期：2025-12-31" 等伪节点
@@ -200,10 +212,8 @@ export async function handleNodeCountRequest(request, env) {
                         const unit = match[2].toUpperCase();
                         const multipliers = { KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
                         const bytes = Math.round(value * (multipliers[unit] || 1));
-                        // 用 total = bytes, upload = 0, download = 0 表示剩余流量
-                        info.total = bytes;
-                        info.upload = 0;
-                        info.download = 0;
+                        // 正文伪节点给出的是剩余量，不能伪造为套餐总量或已用量。
+                        info.remaining = bytes;
                         break;
                     }
                 }

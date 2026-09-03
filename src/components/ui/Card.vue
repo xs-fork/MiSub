@@ -72,23 +72,18 @@ const protocolStyle = computed(() => {
 const trafficInfo = computed(() => {
   const info = props.misub.userInfo;
   const REASONABLE_TRAFFIC_LIMIT_BYTES = 10 * 1024 * 1024 * 1024 * 1024 * 1024; // 10 PB
-  if (
-    !info ||
-    info.total === undefined ||
-    info.download === undefined ||
-    info.upload === undefined ||
-    info.total >= REASONABLE_TRAFFIC_LIMIT_BYTES
-  ) {
-    return null;
-  }  
-  const total = info.total;
-  const used = info.download + info.upload;
-  const percentage = total > 0 ? Math.min((used / total) * 100, 100) : 0;
-  return {
-    used: formatBytes(used),
-    total: formatBytes(total),
-    percentage: percentage,
-  };
+  if (!info) return null;
+  const total = Number(info.total);
+  const used = Number(info.download) + Number(info.upload);
+  if (Number.isFinite(total) && total > 0 && total < REASONABLE_TRAFFIC_LIMIT_BYTES
+    && Number.isFinite(used)) {
+    return { mode: 'usage', used: formatBytes(used), total: formatBytes(total), percentage: Math.min((used / total) * 100, 100) };
+  }
+  const remaining = Number(info.remaining);
+  if (Number.isFinite(remaining) && remaining >= 0 && remaining < REASONABLE_TRAFFIC_LIMIT_BYTES) {
+    return { mode: 'remaining', used: formatBytes(remaining), total: '', percentage: 0 };
+  }
+  return null;
 });
 
 const expiryInfo = computed(() => {
@@ -309,8 +304,8 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
       >
         <div v-if="trafficInfo" class="space-y-2">
           <div class="flex items-end justify-between text-xs">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('subscriptions.usedTraffic') }} <span class="font-semibold text-gray-700 dark:text-gray-200">{{ trafficInfo.used }}</span></span>
-            <span class="text-gray-400">{{ trafficInfo.total }}</span>
+            <span class="text-gray-500 dark:text-gray-400">{{ trafficInfo.mode === 'remaining' ? t('subscriptions.remainingTraffic') : t('subscriptions.usedTraffic') }} <span class="font-semibold text-gray-700 dark:text-gray-200">{{ trafficInfo.used }}</span></span>
+            <span v-if="trafficInfo.mode === 'usage'" class="text-gray-400">{{ trafficInfo.total }}</span>
           </div>
           <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
             <div class="h-full rounded-full bg-gradient-to-r from-primary-400 to-cyan-400 transition-all duration-500" :style="{ width: trafficInfo.percentage + '%' }"></div>
