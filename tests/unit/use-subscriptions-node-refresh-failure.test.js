@@ -119,4 +119,28 @@ describe('useSubscriptions manual node refresh failures', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('keeps existing traffic when a successful node refresh has no traffic header', async () => {
+    const oldUserInfo = { upload: 10, download: 20, total: 100, expire: 999 };
+    mocks.subscriptionsRef.value = [{
+      id: 'sub-1',
+      name: 'Airport',
+      url: 'https://airport.example/sub',
+      enabled: true,
+      nodeCount: 86,
+      userInfo: oldUserInfo
+    }];
+    mocks.fetchNodeCount.mockResolvedValue({
+      success: true,
+      data: { count: 90, userInfo: null }
+    });
+
+    const { useSubscriptions } = await import('../../src/composables/useSubscriptions.js');
+    const { handleUpdateNodeCount } = useSubscriptions(vi.fn());
+
+    await handleUpdateNodeCount('sub-1', false, true);
+
+    expect(mocks.subscriptionsRef.value[0].nodeCount).toBe(90);
+    expect(mocks.subscriptionsRef.value[0].userInfo).toBe(oldUserInfo);
+  });
 });

@@ -193,7 +193,8 @@ export function useSubscriptions(markDirty) {
                 // 成功获取数据
                 const data = result.data.data || result.data; // 兼容后端返回结构
                 subToUpdate.nodeCount = data.count || 0;
-                subToUpdate.userInfo = data.userInfo || null;
+                // 节点响应可能成功但未携带 subscription-userinfo；保留已知流量，避免批量持久化时用空值覆盖。
+                subToUpdate.userInfo = data.userInfo || subToUpdate.userInfo || null;
                 subToUpdate.lastError = null; // 成功后清除错误状态
                 subToUpdate.lastUpdate = new Date().toISOString();
 
@@ -321,11 +322,11 @@ export function useSubscriptions(markDirty) {
 
     try {
       const results = [];
-      const concurrency = 3;
-      for (let index = 0; index < subsToUpdate.length; index += concurrency) {
-        const batch = subsToUpdate.slice(index, index + concurrency);
-        const batchResults = await Promise.allSettled(batch.map(sub => handleUpdateNodeCount(sub.id, false, true)));
-        results.push(...batchResults);
+      for (const sub of subsToUpdate) {
+        const result = await Promise.resolve(handleUpdateNodeCount(sub.id, false, true))
+          .then(value => ({ status: 'fulfilled', value }))
+          .catch(reason => ({ status: 'rejected', reason }));
+        results.push(result);
       }
       const successCount = results.filter(result => result.status === 'fulfilled' && result.value === true).length;
       const failedCount = subsToUpdate.length - successCount;
