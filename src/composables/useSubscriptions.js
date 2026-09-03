@@ -74,20 +74,21 @@ export function useSubscriptions(markDirty) {
   const subsCurrentPage = ref(1);
   const subsItemsPerPage = 6;
 
-  const enabledSubscriptions = computed(() => subscriptions.value.filter(s => s.enabled));
+  const enabledSubscriptions = computed(() => subscriptions.value.filter(s => s.enabled !== false));
 
   const totalRemainingTraffic = computed(() => {
     const REASONABLE_TRAFFIC_LIMIT_BYTES = 10 * 1024 * 1024 * 1024 * 1024 * 1024; // 10 PB in bytes
     return subscriptions.value.reduce((acc, sub) => {
       if (sub.excludeTraffic) return acc;
       if (
-        sub.enabled &&
+        sub.enabled !== false &&
         sub.userInfo &&
-        sub.userInfo.total > 0 &&
-        sub.userInfo.total < REASONABLE_TRAFFIC_LIMIT_BYTES
+        Number(sub.userInfo.total) > 0 &&
+        Number(sub.userInfo.total) < REASONABLE_TRAFFIC_LIMIT_BYTES
       ) {
-        const used = (sub.userInfo.upload || 0) + (sub.userInfo.download || 0);
-        const remaining = sub.userInfo.total - used;
+        const total = Number(sub.userInfo.total);
+        const used = Number(sub.userInfo.upload || 0) + Number(sub.userInfo.download || 0);
+        const remaining = total - used;
         return acc + Math.max(0, remaining);
       }
       return acc;
