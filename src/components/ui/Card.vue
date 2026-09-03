@@ -159,6 +159,26 @@ const updateInfo = computed(() => {
   };
 });
 
+const subscriptionHealth = computed(() => {
+  if (props.misub.lastError) {
+    return { isAbnormal: true, reason: t('subscriptions.healthUpdateFailed') };
+  }
+
+  const info = props.misub.userInfo;
+  const total = Number(info?.total || 0);
+  const used = Number(info?.upload || 0) + Number(info?.download || 0);
+  if (total > 0 && used >= total) {
+    return { isAbnormal: true, reason: t('subscriptions.healthTrafficExhausted') };
+  }
+
+  const hasUpdated = Boolean(props.misub.lastUpdate || props.misub.lastUpdated);
+  if (hasUpdated && Number(props.misub.nodeCount) === 0) {
+    return { isAbnormal: true, reason: t('subscriptions.healthNoNodes') };
+  }
+
+  return { isAbnormal: false, reason: '' };
+});
+
 const normalizeWebsiteUrl = (value) => {
   const website = (value || '').trim();
   if (!website) return null;
@@ -192,6 +212,7 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
     class="group relative flex h-full min-h-[200px] flex-col overflow-hidden rounded-xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary-500/5 dark:border-white/10 dark:bg-gray-900/70"
     :class="{ 
       'opacity-75 grayscale-[0.8]': !misub.enabled,
+      'border-red-300 bg-red-50/70 shadow-red-500/10 dark:border-red-400/40 dark:bg-red-500/10': subscriptionHealth.isAbnormal,
     }"
   >
     <div class="relative z-10 flex flex-col h-full">
@@ -212,6 +233,9 @@ const hasFooterMeta = computed(() => Boolean(noteWithoutUrl.value || websiteUrl.
             </span>
             <span v-if="expiryInfo" data-testid="subscription-expiry-badge" class="rounded-full border border-transparent bg-gray-100 px-2 py-0.5 text-[10px] font-medium dark:bg-white/5" :class="expiryInfo.style">
               {{ expiryInfo.daysRemaining }}
+            </span>
+            <span v-if="subscriptionHealth.isAbnormal" data-testid="subscription-health-badge" class="rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-300">
+              {{ subscriptionHealth.reason }}
             </span>
           </div>
           <h3 class="truncate text-lg font-semibold leading-tight text-gray-900 dark:text-white" :title="misub.name || t('subscriptions.unnamed')">

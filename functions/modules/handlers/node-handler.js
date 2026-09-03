@@ -142,18 +142,9 @@ export async function handleNodeCountRequest(request, env) {
                 headers: { 'User-Agent': processedUserAgent },
                 redirect: "follow"
             };
-            const trafficFetchOptions = {
-                headers: { 'User-Agent': 'clash-verge/v2.4.3' },
-                redirect: "follow"
-            };
-
             // cf 选项需传给 fetch() 而非 Request()：仅在用户显式启用跳过证书验证时传递
             const cfOptions = await resolveNodeCountFetchCfOptions(env);
-            const trafficRequest = fetch(new Request(requestUrl, trafficFetchOptions), cfOptions);
-            const nodeCountRequest = fetch(new Request(requestUrl, fetchOptions), cfOptions);
-
-            // 使用 Promise.allSettled 替换 Promise.all
-            const responses = await Promise.allSettled([trafficRequest, nodeCountRequest]);
+            const nodeCountResponse = await fetch(new Request(requestUrl, fetchOptions), cfOptions);
 
             // 1. 处理流量请求的结果
             // 辅助函数：从响应头提取用户信息
@@ -242,24 +233,8 @@ export async function handleNodeCountRequest(request, env) {
                 return Object.keys(info).length > 0 ? info : null;
             };
 
-            // 1. 处理流量请求的结果
-            if (responses[0].status === 'fulfilled' && responses[0].value.ok) {
-                const info = extractUserInfo(responses[0].value);
-                if (info) {
-                    result.userInfo = info;
-                    trafficRequestSucceeded = true;
-                }
-            } else {
-                // 仅记录警告，不视为严重错误，因为我们还有 fallback
-                const reason = responses[0].status === 'fulfilled'
-                    ? `HTTP ${responses[0].value.status}`
-                    : (responses[0].reason?.message || 'Unknown Error');
-                console.warn(`[NodeHandler] Traffic specific request failed (${reason}). Will attempt fallback extraction.`);
-            }
-
-            // 2. 处理节点数请求的结果
-            if (responses[1].status === 'fulfilled' && responses[1].value.ok) {
-                const nodeCountResponse = responses[1].value;
+            // 使用同一个订阅响应同时解析节点和流量信息，避免同一 token 的并发请求互相限流。
+            if (nodeCountResponse.ok) {
                 const buffer = await nodeCountResponse.arrayBuffer();
                 const text = new TextDecoder('utf-8').decode(buffer);
 
@@ -267,7 +242,7 @@ export async function handleNodeCountRequest(request, env) {
                 try {
                     // [回退1] 如果之前的流量请求失败或没拿到数据，尝试从节点请求的响应头中提取
                     if (!result.userInfo) {
-                        const info = extractUserInfo(responses[1].value);
+                        const info = extractUserInfo(nodeCountResponse);
                         if (info) {
                             console.info('[NodeHandler] Successfully extracted traffic info from node response header (Fallback 1).');
                             result.userInfo = info;
@@ -365,12 +340,28 @@ export async function handleNodeCountRequest(request, env) {
                     }
                     }
                 }
-            } else if (responses[1].status === 'rejected') {
-                if (!fetchError) fetchError = responses[1].reason;
-                console.error('Node count request failed:', responses[1].reason);
-            } else if (responses[1].status === 'fulfilled' && !responses[1].value.ok) {
-                if (!fetchError) fetchError = new Error(`HTTP ${responses[1].value.status}: ${responses[1].value.statusText}`);
-                console.error('Node count request returned error:', responses[1].value.status);
+            } else {
+                if (!fetchError) fetchError = new Error(`HTTP ${nodeCountResponse.status}: ${nodeCountResponse.statusText}`);
+                console.error('Node count request returned error:', nodeCountResponse.status);
+            }
+
+            // 只有首个响应未携带流量信息时，才以兼容 UA 串行补偿一次。
+            if (nodeCountRequestSucceeded && !result.userInfo) {
+                try {
+                    const trafficResponse = await fetch(new Request(requestUrl, {
+                        headers: { 'User-Agent': 'clash-verge/v2.4.3' },
+                        redirect: 'follow'
+                    }), cfOptions);
+                    if (trafficResponse.ok) {
+                        const info = extractUserInfo(trafficResponse);
+                        if (info) {
+                            result.userInfo = info;
+                            trafficRequestSucceeded = true;
+                        }
+                    }
+                } catch (trafficError) {
+                    console.warn('[NodeHandler] Traffic fallback request failed:', trafficError?.message || trafficError);
+                }
             }
 
             // 检查是否两个请求都失败了

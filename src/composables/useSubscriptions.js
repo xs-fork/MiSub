@@ -319,7 +319,13 @@ export function useSubscriptions(markDirty) {
     showToast(t('subscriptions.refreshing', { count: subsToUpdate.length }), 'info');
 
     try {
-      const results = await Promise.allSettled(subsToUpdate.map(sub => handleUpdateNodeCount(sub.id)));
+      const results = [];
+      const concurrency = 3;
+      for (let index = 0; index < subsToUpdate.length; index += concurrency) {
+        const batch = subsToUpdate.slice(index, index + concurrency);
+        const batchResults = await Promise.allSettled(batch.map(sub => handleUpdateNodeCount(sub.id)));
+        results.push(...batchResults);
+      }
       const successCount = results.filter(result => result.status === 'fulfilled' && result.value === true).length;
       const failedCount = subsToUpdate.length - successCount;
       showToast(t('subscriptions.refreshDone', { success: successCount, total: subsToUpdate.length, failed: failedCount }), failedCount ? 'warning' : 'success');
